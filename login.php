@@ -53,7 +53,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
 <main class="card">
     <h1>Iniciar sesión</h1>
-    <p class="muted">Sistema de gestión · Versión 1.0</p>
+    <p class="muted">Sistema de gestión · Versión 1.0 <br>
+        Arnaldo Jara Bartels <br>
+    	Keylor Segura Miranda <br>
+    	Sebastian Rodriguez Hernandez <br>
+    	Daniel Garita Guzman <br>
+    </p>
+    
 
     <?php if ($error !== ''): ?>
         <p class="error"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></p>

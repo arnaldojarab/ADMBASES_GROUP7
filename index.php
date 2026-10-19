@@ -105,7 +105,10 @@ $usuario = htmlspecialchars($_SESSION['usuario'], ENT_QUOTES, 'UTF-8');
 
 <div class="coursebar">
     <span><strong>CURSO:</strong> Administración de Bases de Datos</span>
-    <span><strong>Profesor:</strong> Manuel Espinoza G.</span>
+    <span> Arnaldo Jara Bartels</span>
+    <span> Keylor Segura Miranda</span>
+    <span> Sebastian Rodriguez Hernandez</span>
+    <span> Daniel Garita Guzman</span>
 </div>
 
 <main>
