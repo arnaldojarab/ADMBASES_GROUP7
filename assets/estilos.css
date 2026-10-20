@@ -1,0 +1,69 @@
+/* Consola DBA - estilos compartidos (paleta verde del grupo) */
+:root {
+    --green-950: #052e24; --green-900: #064e3b; --green-700: #047857;
+    --green-100: #d1fae5; --green-50: #ecfdf5;
+    --page: #f1f7f4; --text: #253b32; --muted: #60776c;
+    --border: #dce9e1; --white: #ffffff; --danger: #dc2626;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: var(--page); color: var(--text); }
+a { color: var(--green-700); }
+
+.topbar {
+    min-height: 62px; padding: 12px 2%; display: flex; align-items: center;
+    justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    background: var(--green-950); color: white;
+}
+.brand { color: white; text-decoration: none; font-size: 21px; font-weight: 700; }
+.brand span { font-size: 13px; font-weight: 400; opacity: .75; margin-left: 8px; }
+.account { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.logout { padding: 9px 15px; border-radius: 6px; background: var(--danger); color: white; text-decoration: none; font-weight: 700; }
+.logout:hover { background: #b91c1c; }
+
+.menu { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 2%; background: var(--green-900); }
+.menu a { padding: 11px 14px; color: #d1fae5; text-decoration: none; font-size: 14px; border-bottom: 3px solid transparent; }
+.menu a small { display: block; font-size: 11px; opacity: .8; }
+.menu a:hover { background: #ffffff14; }
+.menu a.activo { color: white; border-bottom-color: #34d399; background: #ffffff1a; }
+.menu a.pendiente { opacity: .6; }
+
+main { width: min(1200px, 92%); margin: 36px auto 40px; }
+h1 { margin: 0 0 18px; color: var(--green-900); font-size: 27px; }
+.intro { margin: 0 0 22px; line-height: 1.6; }
+
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
+.card {
+    padding: 24px; display: flex; flex-direction: column; align-items: flex-start;
+    background: var(--white); border: 1px solid var(--border); border-radius: 10px;
+}
+.card .num { margin: 0 0 6px; font-size: 13px; color: var(--muted); letter-spacing: .04em; }
+.card h2 { margin: 0 0 12px; color: var(--green-700); font-size: 20px; }
+.card p { margin: 0 0 20px; color: var(--muted); line-height: 1.5; }
+.card-pendiente { background: #f8fbf9; }
+.card-pendiente h2 { color: var(--muted); }
+.action { margin-top: auto; padding: 10px 18px; border-radius: 5px; background: var(--green-700); color: white; text-decoration: none; font-weight: 700; font-size: 14px; }
+.action:hover { background: var(--green-900); }
+.badge { margin-top: auto; padding: 5px 10px; border-radius: 999px; background: var(--green-50); color: var(--muted); font-size: 13px; }
+
+.panel { background: var(--white); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-bottom: 20px; }
+.vacio { color: var(--muted); }
+
+.pie {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 26px;
+    padding: 14px 2%; border-top: 1px solid var(--border); background: var(--white);
+    color: var(--muted); font-size: 13px;
+}
+
+/* Login */
+.login-page { min-height: 100vh; display: grid; place-items: center; }
+.login-card { width: min(92%, 400px); padding: 28px; background: white; border-radius: 12px; border: 1px solid var(--border); }
+.login-card h1 { margin-bottom: 4px; }
+.login-card label { display: block; margin: 16px 0 6px; font-weight: 700; }
+.login-card input { width: 100%; padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 1rem; }
+.login-card button { width: 100%; margin-top: 20px; padding: 12px; border: 0; border-radius: 8px; background: var(--green-950); color: white; font-size: 1rem; font-weight: 700; cursor: pointer; }
+.muted { color: var(--muted); font-size: .9rem; }
+.error { padding: 10px; border-radius: 8px; background: #fee2e2; color: #991b1b; }
+.integrantes { margin: 22px 0 0; padding: 14px 0 0 18px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; line-height: 1.7; }
+
+@media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .grid { grid-template-columns: 1fr; } main { margin-top: 24px; } }

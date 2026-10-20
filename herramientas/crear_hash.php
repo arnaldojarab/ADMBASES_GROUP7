@@ -1,18 +1,27 @@
 <?php
 /*
- * Utilidad local para generar un hash válido.
- * Ejecútala temporalmente por terminal: php crear_hash.php "TuClaveSegura"
- * No la publiques en un servidor ni la uses para mostrar contraseñas.
+ * Genera el hash de la contraseña de la consola.
+ * Uso, desde la terminal:  php herramientas/crear_hash.php
+ * Pide la clave sin mostrarla, así no queda en el historial de bash.
+ * Desde el navegador responde 403 (y además la carpeta está bloqueada por .htaccess).
  */
 if (PHP_SAPI !== 'cli') {
     http_response_code(403);
-    exit('Ejecuta este archivo desde la terminal.');
+    exit('Ejecute este archivo desde la terminal.');
 }
 
 $clave = $argv[1] ?? null;
 
-if ($clave === null || $clave === '') {
-    fwrite(STDERR, "Uso: php crear_hash.php \"TuClaveSegura\"\n");
+if ($clave === null) {
+    fwrite(STDOUT, 'Nueva contraseña de la consola: ');
+    system('stty -echo');
+    $clave = trim((string)fgets(STDIN));
+    system('stty echo');
+    fwrite(STDOUT, PHP_EOL);
+}
+
+if ($clave === '') {
+    fwrite(STDERR, "La contraseña no puede quedar vacía.\n");
     exit(1);
 }
 
