@@ -1,0 +1,15 @@
+; PLANTILLA de ~/dba_config/db.cnf  (permisos 600)
+; Credenciales de MariaDB de ESTA cuenta.
+; Lo leen PHP (parse_ini_file) y backup.sh (mariadb-dump --defaults-extra-file).
+; Los comentarios van con punto y coma: PHP no acepta el numeral.
+; No use punto y coma ni numeral dentro de la contraseña.
+
+[client]
+user=USUARIO_LINUX
+password=CLAVE_DE_MARIADB
+host=localhost
+port=3306
+
+; Grupo propio de la consola: los clientes de MariaDB lo ignoran.
+[dba]
+database=NOMBRE_DE_LA_BASE

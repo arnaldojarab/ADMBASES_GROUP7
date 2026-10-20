@@ -5,3 +5,4 @@ config.php
 # Respaldos y bitácoras: nunca se suben
 *.sql.gz
 *.log
+!herramientas/db.ejemplo.cnf
