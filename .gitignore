@@ -1,0 +1,7 @@
+# Configuración y credenciales: viven fuera del repositorio
+config.php
+*.cnf
+
+# Respaldos y bitácoras: nunca se suben
+*.sql.gz
+*.log
