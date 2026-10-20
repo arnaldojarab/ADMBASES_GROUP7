@@ -30,3 +30,8 @@ chmod 600 "$HOME/dba_config/config.php" "$HOME/dba_config/db.cnf"
 echo
 ls -ld "$HOME/dba_config" "$HOME/dba_scripts" "$HOME/respaldos"
 ls -l "$HOME/dba_config"
+
+# Script de respaldos (Proyecto 02): se copia fuera de la web
+cp backup.sh "$HOME/dba_scripts/backup.sh"
+chmod 700 "$HOME/dba_scripts/backup.sh"
+echo "Copiado ~/dba_scripts/backup.sh (700)"
