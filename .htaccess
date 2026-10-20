@@ -1,1 +1,2 @@
 RedirectMatch 404 /\.git
+RedirectMatch 404 /(includes|sql|herramientas)(/|$)
