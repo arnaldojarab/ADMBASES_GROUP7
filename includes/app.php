@@ -21,7 +21,7 @@ return [
         ['num' => '02', 'titulo' => 'Respaldos', 'archivo' => 'respaldos.php',
          'desc' => 'Generar respaldos comprimidos y consultar su historial.'],
         ['num' => '03', 'titulo' => 'Próximamente', 'archivo' => null, 'desc' => 'Módulo disponible próximamente.'],
-        ['num' => '04', 'titulo' => 'Próximamente', 'archivo' => null, 'desc' => 'Módulo disponible próximamente.'],
+        ['num' => '04', 'titulo' => 'Mantenimiento', 'archivo' => 'mantenimiento.php', 'desc' => 'Mantenimiento de la base de datos'],
         ['num' => '05', 'titulo' => 'Próximamente', 'archivo' => null, 'desc' => 'Módulo disponible próximamente.'],
         ['num' => '06', 'titulo' => 'Próximamente', 'archivo' => null, 'desc' => 'Módulo disponible próximamente.'],
     ],
