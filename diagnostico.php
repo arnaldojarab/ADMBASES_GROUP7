@@ -1,0 +1,203 @@
+<?php
+/*
+ * Módulo 03 - Diagnóstico de consultas (versión 2: plan en vivo + interpretación)
+ *
+ * Catálogo controlado: la web solo permite ELEGIR Q01 o Q02.
+ * El SQL está escrito aquí, en el servidor; nunca se recibe del navegador.
+ */
+require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/db.php';
+date_default_timezone_set('America/Costa_Rica');
+
+// ---------- 1. Catálogo de casos (lista permitida) ----------
+$CASOS = [
+    'Q01' => [
+        'titulo'    => 'Cotizaciones de un mes',
+        'proposito' => 'Filtra una sola tabla por un dato significativo: la fecha de la cotización.',
+        'sql'       => "SELECT id_cotizacion, fecha, estado, monto
+FROM cotizaciones
+WHERE fecha BETWEEN :desde AND :hasta
+ORDER BY fecha",
+        'params'    => ['desde' => '2026-03-01', 'hasta' => '2026-03-31'],
+        'alias'     => ['cotizaciones' => 'cotizaciones'],
+    ],
+    'Q02' => [
+        'titulo'    => 'Cotizaciones de una marca',
+        'proposito' => 'Relaciona tres tablas con JOIN, filtra por marca y ordena por fecha.',
+        'sql'       => "SELECT c.id_cotizacion, c.fecha, m.nombre AS marca, v.modelo, c.monto
+FROM cotizaciones c
+JOIN vehiculos v ON v.id_vehiculo = c.id_vehiculo
+JOIN marcas m    ON m.id_marca    = v.id_marca
+WHERE m.nombre = :marca
+ORDER BY c.fecha DESC",
+        'params'    => ['marca' => 'Toyota'],
+        'alias'     => ['c' => 'cotizaciones', 'v' => 'vehiculos', 'm' => 'marcas'],
+    ],
+];
+
+// ---------- 2. Elegir el caso: solo se acepta una clave del catálogo ----------
+$id = $_GET['caso'] ?? 'Q01';
+if (!array_key_exists($id, $CASOS)) {
+    $id = 'Q01';
+}
+$caso = $CASOS[$id];
+
+// ---------- 3. Contexto, plan y resultado ----------
+$error = '';
+try {
+    $pdo = db();
+    $contexto = $pdo->query("SELECT VERSION() AS version, DATABASE() AS bd, CURRENT_USER() AS usuario, NOW() AS ahora")->fetch();
+
+    // EXPLAIN real de la consulta, con los parámetros como valores preparados
+    $st = $pdo->prepare('EXPLAIN ' . $caso['sql']);
+    $st->execute($caso['params']);
+    $plan = $st->fetchAll();
+
+    // Resultado de la consulta: cantidad de filas y suma de montos
+    $st = $pdo->prepare('SELECT COUNT(*) AS filas, SUM(monto) AS total FROM (' . $caso['sql'] . ') AS q');
+    $st->execute($caso['params']);
+    $resultado = $st->fetch();
+} catch (Throwable $ex) {
+    error_log('diagnostico.php: ' . $ex->getMessage());
+    $error = 'No se pudo obtener el plan de la consulta. Revise la conexión y que exista la tabla cotizaciones.';
+}
+
+// ---------- 4. Interpretación del plan ----------
+// Qué significa cada tipo de acceso de la columna "type" de EXPLAIN (MariaDB)
+$TIPOS = [
+    'system' => 'la tabla tiene una sola fila',
+    'const'  => 'encuentra a lo sumo una fila, por llave primaria o UNIQUE',
+    'eq_ref' => 'por cada fila anterior encuentra exactamente una, por llave primaria o UNIQUE',
+    'ref'    => 'busca por un valor en un índice; puede haber varias filas con ese valor',
+    'range'  => 'recorre solo un rango dentro de un índice (por ejemplo, un BETWEEN)',
+    'index'  => 'recorre el índice completo',
+    'ALL'    => 'recorrido completo: lee todas las filas de la tabla, sin usar índice',
+];
+// Qué significan los avisos más comunes de la columna "Extra"
+$EXTRAS = [
+    'Using where'           => 'aplica el filtro WHERE sobre las filas que lee',
+    'Using filesort'        => 'tiene que ordenar el resultado aparte, porque ningún índice le da el orden del ORDER BY',
+    'Using temporary'       => 'usa una tabla temporal para poder ordenar o agrupar',
+    'Using index condition' => 'evalúa el filtro dentro del índice antes de leer la fila completa',
+    'Using index'           => 'obtiene todo desde el índice, sin leer la tabla',
+];
+
+function interpretarFila(array $f, array $alias, array $tipos, array $extras): array
+{
+    $tabla = $alias[$f['table']] ?? $f['table'];
+    $nombre = $f['table'] === $tabla ? $tabla : "{$tabla} (alias {$f['table']})";
+    $lineas = [];
+    $lineas[] = "Acceso {$f['type']}: " . ($tipos[$f['type']] ?? 'tipo de acceso no catalogado') . '.';
+    $lineas[] = $f['key'] !== null
+        ? "Índice usado: {$f['key']}" . ($f['possible_keys'] ? " (candidatos: {$f['possible_keys']})." : '.')
+        : 'No usa índice' . ($f['possible_keys'] ? " (había candidatos: {$f['possible_keys']}, pero no le sirven para este filtro)." : ': no hay ninguno que sirva para esta consulta.');
+    $lineas[] = "Filas estimadas: {$f['rows']}. Es una estimación del motor a partir de sus estadísticas, no un tiempo.";
+    foreach ($extras as $clave => $texto) {
+        if (str_contains((string)$f['Extra'], $clave)) {
+            $lineas[] = "{$clave}: {$texto}.";
+        }
+    }
+    return ['tabla' => $nombre, 'lineas' => $lineas];
+}
+
+$interpretacion = [];
+$estimadoTotal = 1;
+if ($error === '') {
+    foreach ($plan as $fila) {
+        $interpretacion[] = interpretarFila($fila, $caso['alias'], $TIPOS, $EXTRAS);
+        $estimadoTotal *= max(1, (int)$fila['rows']);
+    }
+}
+
+$titulo = 'Módulo 03: Diagnóstico de consultas';
+$activo = 'diagnostico.php';
+require __DIR__ . '/includes/header.php';
+?>
+<style>
+    .resumen { display: flex; flex-wrap: wrap; gap: 14px; margin: 20px 0; }
+    .resumen div { flex: 1; min-width: 160px; background: #fff; border: 1px solid #dce9e1; border-radius: 10px; padding: 12px 16px; }
+    .resumen span { display: block; font-size: 13px; color: #60776c; }
+    .resumen strong { font-size: 17px; color: #064e3b; word-break: break-word; }
+    .casos { display: flex; gap: 10px; margin: 10px 0 20px; }
+    .casos a { padding: 10px 18px; border-radius: 6px; border: 1px solid #047857; color: #047857; text-decoration: none; font-weight: bold; }
+    .casos a.sel { background: #047857; color: #fff; }
+    .caja { background: #fff; border: 1px solid #dce9e1; border-radius: 10px; padding: 14px 18px; margin: 18px 0; }
+    .caja h2 { margin-top: 0; font-size: 18px; color: #064e3b; }
+    .caja pre { background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
+    .tabla-scroll { overflow-x: auto; }
+    .tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .tabla th, .tabla td { padding: 8px 10px; border-bottom: 1px solid #dce9e1; text-align: left; white-space: nowrap; }
+    .tabla th { background: #ecfdf5; color: #064e3b; }
+    .mensaje { padding: 10px 14px; border-radius: 8px; background: #fee2e2; color: #991b1b; }
+    .interp h3 { margin: 14px 0 4px; font-size: 15px; color: #047857; }
+    .interp ul { margin: 0; padding-left: 20px; line-height: 1.6; }
+    .nota { color: #60776c; font-size: 14px; }
+</style>
+
+<h1>Módulo 03: Diagnóstico de consultas</h1>
+
+<?php if ($error !== ''): ?>
+    <p class="mensaje"><?= e($error) ?></p>
+<?php else: ?>
+
+    <!-- Contexto -->
+    <div class="resumen">
+        <div><span>Motor (versión del servidor)</span><strong>MariaDB <?= e($contexto['version']) ?></strong></div>
+        <div><span>Base de datos</span><strong><?= e($contexto['bd']) ?></strong></div>
+        <div><span>Usuario conectado</span><strong><?= e($contexto['usuario']) ?></strong></div>
+        <div><span>Fecha y hora</span><strong><?= e(date('d/m/Y H:i:s', strtotime($contexto['ahora']))) ?></strong></div>
+        <div><span>Consola DBA</span><strong>versión <?= e($APP['version']) ?></strong></div>
+    </div>
+
+    <!-- Selector de caso -->
+    <div class="casos">
+        <?php foreach ($CASOS as $clave => $c): ?>
+            <a href="?caso=<?= e($clave) ?>" class="<?= $clave === $id ? 'sel' : '' ?>"><?= e($clave) ?>: <?= e($c['titulo']) ?></a>
+        <?php endforeach; ?>
+    </div>
+
+    <!-- El caso -->
+    <div class="caja">
+        <h2><?= e($id) ?>: <?= e($caso['titulo']) ?></h2>
+        <p><?= e($caso['proposito']) ?></p>
+        <pre><?= e($caso['sql']) ?></pre>
+        <p><strong>Parámetros:</strong>
+            <?php foreach ($caso['params'] as $nombre => $valor): ?>
+                <code>:<?= e($nombre) ?> = <?= e($valor) ?></code>
+            <?php endforeach; ?>
+        </p>
+        <p><strong>Resultado:</strong> <?= e($resultado['filas']) ?> filas, total ₡<?= number_format((float)$resultado['total'], 2) ?></p>
+    </div>
+
+    <!-- El plan -->
+    <div class="caja">
+        <h2>Plan de ejecución (EXPLAIN)</h2>
+        <div class="tabla-scroll">
+            <table class="tabla">
+                <tr><?php foreach (array_keys($plan[0]) as $col): ?><th><?= e($col) ?></th><?php endforeach; ?></tr>
+                <?php foreach ($plan as $fila): ?>
+                    <tr><?php foreach ($fila as $valor): ?><td><?= e($valor ?? 'NULL') ?></td><?php endforeach; ?></tr>
+                <?php endforeach; ?>
+            </table>
+        </div>
+    </div>
+
+    <!-- La interpretación -->
+    <div class="caja interp">
+        <h2>Interpretación del plan</h2>
+        <p class="nota">MariaDB lee las tablas en el orden en que aparecen en el plan (de arriba hacia abajo).</p>
+        <?php foreach ($interpretacion as $i => $p): ?>
+            <h3><?= $i + 1 ?>. Tabla <?= e($p['tabla']) ?></h3>
+            <ul>
+                <?php foreach ($p['lineas'] as $linea): ?><li><?= e($linea) ?></li><?php endforeach; ?>
+            </ul>
+        <?php endforeach; ?>
+        <?php if (count($plan) > 1): ?>
+            <p class="nota">En un JOIN las filas estimadas se multiplican: MariaDB estima revisar unas
+                <?= number_format($estimadoTotal) ?> combinaciones en total. El resultado real fue de <?= e($resultado['filas']) ?> filas.</p>
+        <?php endif; ?>
+    </div>
+
+<?php endif; ?>
+
+<?php require __DIR__ . '/includes/footer.php'; ?>
