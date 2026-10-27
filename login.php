@@ -2,6 +2,7 @@
 /*
  * Inicio de sesión de la Consola DBA.
  * El usuario y el HASH de la contraseña están en ~/dba_config/config.php.
+ * Usuarios: el administrador de la cuenta y, si config.php lo define, un acceso aparte para el profesor.
  * password_verify() compara la clave escrita con el hash; la clave nunca se guarda.
  * Ojo: esto es solo para entrar a la consola, no son las credenciales de MariaDB.
  */
@@ -18,13 +19,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $usuario = trim($_POST['usuario'] ?? '');
     $clave   = $_POST['clave'] ?? '';
 
-    $usuarioOk = hash_equals($CONFIG['consola_usuario'], $usuario);
-    $claveOk   = password_verify($clave, $CONFIG['consola_hash']);
+    // Usuarios permitidos: el administrador y, si está configurado, el acceso del profesor
+    $usuarios = [
+        $CONFIG['consola_usuario'] => [$CONFIG['consola_hash'], $CONFIG['consola_nombre'] ?? 'Administrador'],
+    ];
+    if (!empty($CONFIG['profesor_usuario']) && !empty($CONFIG['profesor_hash'])) {
+        $usuarios[$CONFIG['profesor_usuario']] = [$CONFIG['profesor_hash'], 'Profesor'];
+    }
 
-    if ($usuarioOk && $claveOk) {
+    $datos = $usuarios[$usuario] ?? null;
+
+    if ($datos !== null && password_verify($clave, $datos[0])) {
         session_regenerate_id(true);           // nuevo id de sesión al entrar
         $_SESSION['usuario'] = $usuario;
-        $_SESSION['nombre']  = $CONFIG['consola_nombre'] ?? $usuario;
+        $_SESSION['nombre']  = $datos[1];
         header('Location: index.php');
         exit;
     }

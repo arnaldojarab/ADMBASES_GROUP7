@@ -1,6 +1,6 @@
 <?php
 /*
- * Módulo 03 - Diagnóstico de consultas (versión 5: el ensayo antes / después es solo para Q01)
+ * Módulo 03 - Diagnóstico de consultas (versión 6: ensayo en Q01 y Q02, con la mejora aplicada y su interpretación)
  *
  * Catálogo controlado: la web solo permite ELEGIR Q01 o Q02.
  * El SQL está escrito aquí, en el servidor; nunca se recibe del navegador.
@@ -20,7 +20,14 @@ WHERE fecha BETWEEN :desde AND :hasta
 ORDER BY fecha",
         'params'    => ['desde' => '2026-03-01', 'hasta' => '2026-03-31'],
         'alias'     => ['cotizaciones' => 'cotizaciones'],
-        'ensayo'    => true,    // a este caso se le hace el ensayo antes / después con el índice
+        'ensayo'    => true,    // a este caso se le hace el ensayo antes / después
+        'mejora'    => [
+            'tabla'   => 'cotizaciones',
+            'indice'  => 'idx_cotizaciones_fecha',
+            'sql'     => 'CREATE INDEX idx_cotizaciones_fecha ON cotizaciones(fecha);',
+            'archivo' => 'sql/indice_cotizaciones.sql',
+            'motivo'  => 'Q01 filtra por un rango de fechas y ordena por fecha. Sin un índice sobre fecha, MariaDB lee toda la tabla y ordena el resultado aparte.',
+        ],
     ],
     'Q02' => [
         'titulo'    => 'Cotizaciones de una marca',
@@ -34,6 +41,13 @@ ORDER BY c.fecha DESC",
         'params'    => ['marca' => 'Toyota'],
         'alias'     => ['c' => 'cotizaciones', 'v' => 'vehiculos', 'm' => 'marcas'],
         'ensayo'    => true,
+        'mejora'    => [
+            'tabla'   => 'marcas',
+            'indice'  => 'idx_marcas_nombre',
+            'sql'     => 'CREATE INDEX idx_marcas_nombre ON marcas(nombre);',
+            'archivo' => 'sql/indice_marcas.sql',
+            'motivo'  => 'Q02 empieza buscando la marca por su nombre. Sin un índice sobre nombre, MariaDB recorre todas las marcas para encontrarla.',
+        ],
     ],
 ];
 
@@ -59,6 +73,15 @@ try {
     $st = $pdo->prepare('SELECT COUNT(*) AS filas, SUM(monto) AS total FROM (' . $caso['sql'] . ') AS q');
     $st->execute($caso['params']);
     $resultado = $st->fetch();
+
+    // ¿Ya existe el índice de la mejora? (nombres tomados del catálogo, enlazados como valores)
+    $indiceExiste = null;
+    if (!empty($caso['mejora'])) {
+        $st = $pdo->prepare("SELECT COUNT(*) FROM information_schema.STATISTICS
+                             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?");
+        $st->execute([$caso['mejora']['tabla'], $caso['mejora']['indice']]);
+        $indiceExiste = (int)$st->fetchColumn() > 0;
+    }
 } catch (Throwable $ex) {
     error_log('diagnostico.php: ' . $ex->getMessage());
     $error = 'No se pudo obtener el plan de la consulta. Revise la conexión y que exista la tabla cotizaciones.';
@@ -174,6 +197,43 @@ if ($guardado && $error === '') {
                 && (string)$guardado['resultado']['total'] === (string)$resultado['total'];
 }
 
+// Interpretación breve de la mejora, a partir de lo que cambió en el plan
+$lecturaMejora = [];
+if ($comparacion) {
+    $huboCambio = false;
+    foreach ($comparacion as $c) {
+        $v = array_column($c['filas'], null, 'col');
+        if (!$v['type']['cambio'] && !$v['key']['cambio'] && !$v['rows']['cambio']) {
+            continue;
+        }
+        $huboCambio = true;
+        $tA = $v['type']['antes'];
+        $tD = $v['type']['despues'];
+        $l = "En {$c['tabla']}, el acceso pasó de {$tA} a {$tD}. Antes: " . ($TIPOS[$tA] ?? '') . '; ahora: ' . ($TIPOS[$tD] ?? '') . '.';
+        if ($v['key']['cambio'] && $v['key']['despues'] !== 'NULL') {
+            $l .= " Ahora usa el índice {$v['key']['despues']}.";
+        }
+        if ($c['rowsA'] > 0 && $c['rowsD'] !== $c['rowsA']) {
+            $l .= " Las filas estimadas bajan de {$c['rowsA']} a {$c['rowsD']}.";
+        }
+        $exA = (string)$v['Extra']['antes'];
+        $exD = (string)$v['Extra']['despues'];
+        if (str_contains($exA, 'Using filesort') && !str_contains($exD, 'Using filesort')) {
+            $l .= ' Desaparece Using filesort: el índice ya entrega las filas en el orden del ORDER BY.';
+        } elseif (str_contains($exD, 'Using filesort')) {
+            $l .= ' Using filesort se mantiene, porque el orden lo pide una columna que este índice no cubre.';
+        }
+        $lecturaMejora[] = $l;
+    }
+    if (!$huboCambio) {
+        $lecturaMejora[] = $indiceExiste
+            ? 'El índice existe, pero el plan no cambió: MariaDB estimó que su plan original era igual o más barato (por ejemplo, si la tabla es pequeña o el filtro es poco selectivo).'
+            : 'Todavía no se ha aplicado la mejora: el plan actual es igual al guardado.';
+    } else {
+        $lecturaMejora[] = 'Las filas estimadas son una estimación del optimizador, no un tiempo de ejecución.';
+    }
+}
+
 $interpretacion = [];
 $estimadoTotal = 1;
 if ($error === '') {
@@ -272,6 +332,23 @@ require __DIR__ . '/includes/header.php';
     </div>
     <?php endif; ?>
 
+    <!-- Mejora ensayada (solo los casos con ensayo) -->
+    <?php if (!empty($caso['mejora'])): ?>
+        <div class="caja">
+            <h2>Mejora ensayada en <?= e($id) ?></h2>
+            <p><?= e($caso['mejora']['motivo']) ?></p>
+            <p><strong>Modificación aplicada</strong> (desde la terminal, archivo <code><?= e($caso['mejora']['archivo']) ?></code>):</p>
+            <pre><?= e($caso['mejora']['sql']) ?></pre>
+            <p><strong>Estado del índice:</strong>
+                <?php if ($indiceExiste): ?>
+                    <span class="ok">creado en la tabla <?= e($caso['mejora']['tabla']) ?></span>
+                <?php else: ?>
+                    <span class="mal">todavía no existe</span>
+                <?php endif; ?>
+            </p>
+        </div>
+    <?php endif; ?>
+
     <!-- El plan -->
     <div class="caja">
         <h2>Plan de ejecución (EXPLAIN)</h2>
@@ -310,6 +387,13 @@ require __DIR__ . '/includes/header.php';
                         (<?= number_format(100 * ($c['rowsD'] - $c['rowsA']) / $c['rowsA'], 1) ?> %).</p>
                 <?php endif; ?>
             <?php endforeach; ?>
+
+            <?php if ($lecturaMejora): ?>
+                <h3>Interpretación de la mejora</h3>
+                <ul>
+                    <?php foreach ($lecturaMejora as $l): ?><li><?= e($l) ?></li><?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
 
             <h3>Equivalencia del resultado</h3>
             <table class="tabla">
