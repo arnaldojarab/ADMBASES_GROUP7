@@ -4,8 +4,8 @@
  * Muestra: conexión, tamaño de la BD, tablas, registros, tamaños,
  * tablas que más espacio consumen, consultas usadas y explicación.
  *
- * Las credenciales NO están aquí: salen de $CONFIG['db'] (cargado desde dbf.conf
- * por includes/auth.php o el archivo de configuración central).
+ * Las credenciales NO están aquí: salen de $CONFIG['db'] (cargado desde ~/dba_config/db.cnf
+ * por includes/bootstrap.php).
  */
 require_once __DIR__ . '/includes/auth.php';
 date_default_timezone_set('America/Costa_Rica');
@@ -69,7 +69,7 @@ $maxTotal       = $tablas ? max(array_map('floatval', array_column($tablas, 'tot
 $top3           = array_slice(array_column($tablas, 'nombre'), 0, 3);
 
 $titulo = 'Proyecto 01: Monitor de Base de Datos';
-$activo = 'monitoreo.php';
+$activo = 'monitor.php';
 require __DIR__ . '/includes/header.php';
 ?>
 <style>
