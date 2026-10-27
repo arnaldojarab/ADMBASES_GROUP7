@@ -1,6 +1,6 @@
 <?php
 /*
- * Módulo 03 - Diagnóstico de consultas (versión 3: + guardar el plan "antes")
+ * Módulo 03 - Diagnóstico de consultas (versión 4: + comparación antes / después)
  *
  * Catálogo controlado: la web solo permite ELEGIR Q01 o Q02.
  * El SQL está escrito aquí, en el servidor; nunca se recibe del navegador.
@@ -144,6 +144,32 @@ function interpretarFila(array $f, array $alias, array $tipos, array $extras): a
     return ['tabla' => $nombre, 'lineas' => $lineas];
 }
 
+// ---------- 5. Comparación con el plan "antes" guardado ----------
+$comparacion = [];
+$equivalente = null;
+if ($guardado && $error === '') {
+    // Se emparejan las filas de ambos planes por el nombre (o alias) de la tabla
+    $antesPorTabla = array_column($guardado['plan'], null, 'table');
+    foreach ($plan as $despues) {
+        $antes = $antesPorTabla[$despues['table']] ?? null;
+        $filas = [];
+        foreach (['type', 'key', 'rows', 'Extra'] as $col) {
+            $a = $antes[$col] ?? null;
+            $d = $despues[$col] ?? null;
+            $filas[] = ['col' => $col, 'antes' => $a ?? 'NULL', 'despues' => $d ?? 'NULL', 'cambio' => (string)$a !== (string)$d];
+        }
+        $comparacion[] = [
+            'tabla'   => $caso['alias'][$despues['table']] ?? $despues['table'],
+            'filas'   => $filas,
+            'rowsA'   => (int)($antes['rows'] ?? 0),
+            'rowsD'   => (int)$despues['rows'],
+        ];
+    }
+    // Mismo resultado antes y después: misma cantidad de filas y misma suma de montos
+    $equivalente = (int)$guardado['resultado']['filas'] === (int)$resultado['filas']
+                && (string)$guardado['resultado']['total'] === (string)$resultado['total'];
+}
+
 $interpretacion = [];
 $estimadoTotal = 1;
 if ($error === '') {
@@ -177,6 +203,9 @@ require __DIR__ . '/includes/header.php';
     .interp ul { margin: 0; padding-left: 20px; line-height: 1.6; }
     .nota { color: #60776c; font-size: 14px; }
     .aviso { padding: 10px 14px; border-radius: 8px; background: #dcfce7; color: #166534; }
+    .tabla td.cambio { background: #fef9c3; font-weight: bold; }
+    .ok { color: #166534; font-weight: bold; }
+    .mal { color: #991b1b; font-weight: bold; }
     .caja button { padding: 10px 18px; border: 0; border-radius: 6px; background: #047857; color: #fff; font-weight: bold; cursor: pointer; }
 </style>
 
@@ -246,6 +275,48 @@ require __DIR__ . '/includes/header.php';
             </table>
         </div>
     </div>
+
+    <!-- Comparación antes / después -->
+    <?php if ($guardado): ?>
+        <div class="caja">
+            <h2>Comparación del plan: antes / después</h2>
+            <p class="nota">Antes: plan guardado el <?= e(date('d/m/Y H:i:s', strtotime($guardado['fecha']))) ?>.
+                Después: plan actual, obtenido ahora con EXPLAIN. Las celdas resaltadas cambiaron.</p>
+            <?php foreach ($comparacion as $c): ?>
+                <h3>Tabla <?= e($c['tabla']) ?></h3>
+                <div class="tabla-scroll">
+                    <table class="tabla">
+                        <tr><th>Columna</th><th>Antes</th><th>Después</th></tr>
+                        <?php foreach ($c['filas'] as $f): ?>
+                            <tr>
+                                <td><?= e($f['col']) ?></td>
+                                <td><?= e($f['antes']) ?></td>
+                                <td class="<?= $f['cambio'] ? 'cambio' : '' ?>"><?= e($f['despues']) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </table>
+                </div>
+                <?php if ($c['rowsA'] > 0 && $c['rowsD'] !== $c['rowsA']): ?>
+                    <p>Filas estimadas: de <?= number_format($c['rowsA']) ?> a <?= number_format($c['rowsD']) ?>
+                        (<?= number_format(100 * ($c['rowsD'] - $c['rowsA']) / $c['rowsA'], 1) ?> %).</p>
+                <?php endif; ?>
+            <?php endforeach; ?>
+
+            <h3>Equivalencia del resultado</h3>
+            <table class="tabla">
+                <tr><th></th><th>Antes</th><th>Después</th></tr>
+                <tr><td>Filas</td><td><?= e($guardado['resultado']['filas']) ?></td><td><?= e($resultado['filas']) ?></td></tr>
+                <tr><td>Suma de montos</td>
+                    <td>₡<?= number_format((float)$guardado['resultado']['total'], 2) ?></td>
+                    <td>₡<?= number_format((float)$resultado['total'], 2) ?></td></tr>
+            </table>
+            <?php if ($equivalente): ?>
+                <p class="ok">✔ Resultado equivalente: la consulta devuelve lo mismo antes y después del cambio.</p>
+            <?php else: ?>
+                <p class="mal">✘ El resultado no coincide: el cambio alteró los datos que devuelve la consulta.</p>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
 
     <!-- La interpretación -->
     <div class="caja interp">
