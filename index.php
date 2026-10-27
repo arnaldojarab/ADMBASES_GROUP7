@@ -15,7 +15,7 @@ require __DIR__ . '/includes/header.php';
 <section class="grid" aria-label="Módulos">
     <?php foreach ($APP['modulos'] as $m): ?>
         <article class="card <?= $m['archivo'] ? '' : 'card-pendiente' ?>">
-            <p class="num">Proyecto <?= e($m['num']) ?></p>
+            <p class="num">Módulo <?= e($m['num']) ?></p>
             <h2><?= e($m['titulo']) ?></h2>
             <p><?= e($m['desc']) ?></p>
             <?php if ($m['archivo']): ?>

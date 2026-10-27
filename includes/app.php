@@ -5,7 +5,7 @@
  */
 return [
     'nombre'      => 'Consola DBA',
-    'version'     => '1.0',
+    'version'     => '2.0',
     'grupo'       => 'Grupo 7 - DASK',
     'motor'       => 'MariaDB',
     'integrantes' => [
@@ -20,7 +20,8 @@ return [
          'desc' => 'Tamaño de la base, tablas, registros y tamaño por tabla.'],
         ['num' => '02', 'titulo' => 'Respaldos', 'archivo' => 'respaldos.php',
          'desc' => 'Generar respaldos comprimidos y consultar su historial.'],
-        ['num' => '03', 'titulo' => 'Próximamente', 'archivo' => null, 'desc' => 'Módulo disponible próximamente.'],
+        ['num' => '03', 'titulo' => 'Diagnóstico de consultas', 'archivo' => 'diagnostico.php',
+         'desc' => 'Plan de ejecución (EXPLAIN) de Q01 y Q02, y ensayo antes y después.'],
         ['num' => '04', 'titulo' => 'Mantenimiento', 'archivo' => 'mantenimiento.php', 'desc' => 'Mantenimiento de la base de datos'],
         ['num' => '05', 'titulo' => 'Próximamente', 'archivo' => null, 'desc' => 'Módulo disponible próximamente.'],
         ['num' => '06', 'titulo' => 'Próximamente', 'archivo' => null, 'desc' => 'Módulo disponible próximamente.'],

@@ -1,6 +1,6 @@
 <?php
 /*
- * Proyecto 02 - Respaldos
+ * Módulo 02 - Respaldos
  * 1. Botón "Generar nuevo respaldo": ejecuta ~/dba_scripts/backup.sh
  * 2. Lee la bitácora y la carpeta ~/respaldos
  * 3. Muestra un resumen y la tabla de respaldos
@@ -62,7 +62,7 @@ usort($respaldos, fn($a, $b) => $b['fecha'] <=> $a['fecha']);   // más reciente
 
 $totalKb = array_sum(array_column($respaldos, 'tamano')) / 1024;
 
-$titulo = 'Proyecto 02: Respaldos';
+$titulo = 'Módulo 02: Respaldos';
 $activo = 'respaldos.php';
 require __DIR__ . '/includes/header.php';
 ?>
@@ -83,7 +83,7 @@ require __DIR__ . '/includes/header.php';
     .estado-error { color: #b91c1c; font-weight: bold; }
 </style>
 
-<h1>Proyecto 02: Respaldos</h1>
+<h1>Módulo 02: Respaldos</h1>
 <p class="intro">Respaldos de la base <strong><?= e($CONFIG['db']['name']) ?></strong>, guardados en <code>~/respaldos/</code>.</p>
 
 <?php if ($mensaje !== ''): ?>

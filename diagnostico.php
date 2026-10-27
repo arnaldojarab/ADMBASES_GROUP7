@@ -1,6 +1,6 @@
 <?php
 /*
- * Módulo 03 - Diagnóstico de consultas (versión 4: + comparación antes / después)
+ * Módulo 03 - Diagnóstico de consultas (versión 5: el ensayo antes / después es solo para Q01)
  *
  * Catálogo controlado: la web solo permite ELEGIR Q01 o Q02.
  * El SQL está escrito aquí, en el servidor; nunca se recibe del navegador.
@@ -20,6 +20,7 @@ WHERE fecha BETWEEN :desde AND :hasta
 ORDER BY fecha",
         'params'    => ['desde' => '2026-03-01', 'hasta' => '2026-03-31'],
         'alias'     => ['cotizaciones' => 'cotizaciones'],
+        'ensayo'    => true,    // a este caso se le hace el ensayo antes / después con el índice
     ],
     'Q02' => [
         'titulo'    => 'Cotizaciones de una marca',
@@ -32,6 +33,7 @@ WHERE m.nombre = :marca
 ORDER BY c.fecha DESC",
         'params'    => ['marca' => 'Toyota'],
         'alias'     => ['c' => 'cotizaciones', 'v' => 'vehiculos', 'm' => 'marcas'],
+        'ensayo'    => true,
     ],
 ];
 
@@ -73,6 +75,8 @@ if (empty($_SESSION['csrf'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['csrf'], $_POST['csrf'] ?? '')) {
         $_SESSION['mensaje'] = 'ERROR: solicitud no válida.';
+    } elseif (empty($caso['ensayo'])) {
+        $_SESSION['mensaje'] = 'ERROR: este caso no tiene ensayo antes / después.';
     } elseif ($error !== '') {
         $_SESSION['mensaje'] = 'ERROR: no hay plan para guardar.';
     } elseif (file_exists($archivoAntes)) {
@@ -244,7 +248,11 @@ require __DIR__ . '/includes/header.php';
         <p><strong>Resultado:</strong> <?= e($resultado['filas']) ?> filas, total ₡<?= number_format((float)$resultado['total'], 2) ?></p>
     </div>
 
-    <!-- Plan "antes" guardado -->
+    <!-- Plan "antes" guardado (solo los casos con ensayo) -->
+    <?php if (empty($caso['ensayo'])): ?>
+        <p class="nota">Este caso es solo de diagnóstico: ya usa los índices de las llaves foráneas.
+            El ensayo antes / después con un índice nuevo se hace con Q01.</p>
+    <?php else: ?>
     <div class="caja">
         <h2>Plan "antes" de <?= e($id) ?></h2>
         <?php if ($mensaje !== ''): ?>
@@ -262,6 +270,7 @@ require __DIR__ . '/includes/header.php';
             </form>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <!-- El plan -->
     <div class="caja">

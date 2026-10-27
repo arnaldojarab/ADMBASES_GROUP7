@@ -28,12 +28,12 @@ $activo = $activo ?? basename($_SERVER['SCRIPT_NAME']);
     <?php foreach ($APP['modulos'] as $m): ?>
         <?php if ($m['archivo']): ?>
             <a href="<?= e($m['archivo']) ?>" class="<?= $activo === $m['archivo'] ? 'activo' : '' ?>">
-                Proyecto <?= e($m['num']) ?> <small><?= e($m['titulo']) ?></small>
+                Módulo <?= e($m['num']) ?> <small><?= e($m['titulo']) ?></small>
             </a>
         <?php else: ?>
             <a href="proximamente.php?p=<?= e($m['num']) ?>"
                class="pendiente <?= ($activo === 'proximamente.php' && ($_GET['p'] ?? '') === $m['num']) ? 'activo' : '' ?>">
-                Proyecto <?= e($m['num']) ?> <small>Próximamente</small>
+                Módulo <?= e($m['num']) ?> <small>Próximamente</small>
             </a>
         <?php endif; ?>
     <?php endforeach; ?>

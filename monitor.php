@@ -1,6 +1,6 @@
 <?php
 /*
- * Proyecto 01 - Monitor de Base de Datos (MariaDB)
+ * Módulo 01 - Monitor de Base de Datos (MariaDB)
  * Muestra: conexión, tamaño de la BD, tablas, registros, tamaños,
  * tablas que más espacio consumen, consultas usadas y explicación.
  *
@@ -68,7 +68,7 @@ $totalRegistros = array_sum(array_map('intval', array_column($tablas, 'registros
 $maxTotal       = $tablas ? max(array_map('floatval', array_column($tablas, 'total'))) : 0;
 $top3           = array_slice(array_column($tablas, 'nombre'), 0, 3);
 
-$titulo = 'Proyecto 01: Monitor de Base de Datos';
+$titulo = 'Módulo 01: Monitor de Base de Datos';
 $activo = 'monitor.php';
 require __DIR__ . '/includes/header.php';
 ?>
@@ -92,7 +92,7 @@ require __DIR__ . '/includes/header.php';
     summary { cursor: pointer; font-weight: bold; color: #064e3b; }
 </style>
 
-<h1>Proyecto 01: Monitor de Base de Datos</h1>
+<h1>Módulo 01: Monitor de Base de Datos</h1>
 <p class="intro">Espacio y contenido de la base <strong><?= e($bd) ?></strong>.</p>
 
 <?php if ($error !== ''): ?>
