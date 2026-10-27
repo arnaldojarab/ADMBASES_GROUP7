@@ -6,7 +6,7 @@
 set -e
 cd "$(dirname "$0")"
 
-for d in "$HOME/dba_config" "$HOME/dba_scripts" "$HOME/respaldos"; do
+for d in "$HOME/dba_config" "$HOME/dba_scripts" "$HOME/respaldos" "$HOME/dba_planes"; do
     mkdir -p "$d"
     chmod 700 "$d"
 done
@@ -28,10 +28,10 @@ fi
 chmod 600 "$HOME/dba_config/config.php" "$HOME/dba_config/db.cnf"
 
 echo
-ls -ld "$HOME/dba_config" "$HOME/dba_scripts" "$HOME/respaldos"
+ls -ld "$HOME/dba_config" "$HOME/dba_scripts" "$HOME/respaldos" "$HOME/dba_planes"
 ls -l "$HOME/dba_config"
 
-# Script de respaldos (Proyecto 02): se copia fuera de la web
+# Script de respaldos (Módulo 02): se copia fuera de la web
 cp backup.sh "$HOME/dba_scripts/backup.sh"
 chmod 700 "$HOME/dba_scripts/backup.sh"
 echo "Copiado ~/dba_scripts/backup.sh (700)"
