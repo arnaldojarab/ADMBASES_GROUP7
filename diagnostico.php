@@ -1,6 +1,6 @@
 <?php
 /*
- * Módulo 03 - Diagnóstico de consultas (versión 2: plan en vivo + interpretación)
+ * Módulo 03 - Diagnóstico de consultas (versión 3: + guardar el plan "antes")
  *
  * Catálogo controlado: la web solo permite ELEGIR Q01 o Q02.
  * El SQL está escrito aquí, en el servidor; nunca se recibe del navegador.
@@ -61,6 +61,50 @@ try {
     error_log('diagnostico.php: ' . $ex->getMessage());
     $error = 'No se pudo obtener el plan de la consulta. Revise la conexión y que exista la tabla cotizaciones.';
 }
+
+// ---------- 3b. Guardar el plan "antes" (fuera de public_html) ----------
+$dirPlanes    = $CONFIG['planes_dir'] ?? "$homeCuenta/dba_planes";   // ~/dba_planes
+$archivoAntes = "$dirPlanes/{$id}_antes.json";                       // $id ya viene del catálogo
+
+if (empty($_SESSION['csrf'])) {
+    $_SESSION['csrf'] = bin2hex(random_bytes(16));
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!hash_equals($_SESSION['csrf'], $_POST['csrf'] ?? '')) {
+        $_SESSION['mensaje'] = 'ERROR: solicitud no válida.';
+    } elseif ($error !== '') {
+        $_SESSION['mensaje'] = 'ERROR: no hay plan para guardar.';
+    } elseif (file_exists($archivoAntes)) {
+        $_SESSION['mensaje'] = "El plan \"antes\" de $id ya estaba guardado; no se sobrescribe.";
+    } else {
+        $datos = [
+            'caso'      => $id,
+            'etapa'     => 'antes',
+            'fecha'     => date('Y-m-d H:i:s'),
+            'cuenta'    => get_current_user(),
+            'bd'        => $contexto['bd'],
+            'sql'       => $caso['sql'],
+            'params'    => $caso['params'],
+            'resultado' => $resultado,
+            'plan'      => $plan,
+        ];
+        $json = json_encode($datos, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        if (file_put_contents($archivoAntes, $json) !== false) {
+            chmod($archivoAntes, 0600);
+            $_SESSION['mensaje'] = "Plan \"antes\" de $id guardado en ~/dba_planes/";
+        } else {
+            error_log("diagnostico.php: no se pudo escribir $archivoAntes");
+            $_SESSION['mensaje'] = 'ERROR: no se pudo guardar el plan.';
+        }
+    }
+    header('Location: diagnostico.php?caso=' . urlencode($id));   // recargar no repite el guardado
+    exit;
+}
+
+$mensaje = $_SESSION['mensaje'] ?? '';
+unset($_SESSION['mensaje']);
+$guardado = is_readable($archivoAntes) ? json_decode(file_get_contents($archivoAntes), true) : null;
 
 // ---------- 4. Interpretación del plan ----------
 // Qué significa cada tipo de acceso de la columna "type" de EXPLAIN (MariaDB)
@@ -132,6 +176,8 @@ require __DIR__ . '/includes/header.php';
     .interp h3 { margin: 14px 0 4px; font-size: 15px; color: #047857; }
     .interp ul { margin: 0; padding-left: 20px; line-height: 1.6; }
     .nota { color: #60776c; font-size: 14px; }
+    .aviso { padding: 10px 14px; border-radius: 8px; background: #dcfce7; color: #166534; }
+    .caja button { padding: 10px 18px; border: 0; border-radius: 6px; background: #047857; color: #fff; font-weight: bold; cursor: pointer; }
 </style>
 
 <h1>Módulo 03: Diagnóstico de consultas</h1>
@@ -167,6 +213,25 @@ require __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
         </p>
         <p><strong>Resultado:</strong> <?= e($resultado['filas']) ?> filas, total ₡<?= number_format((float)$resultado['total'], 2) ?></p>
+    </div>
+
+    <!-- Plan "antes" guardado -->
+    <div class="caja">
+        <h2>Plan "antes" de <?= e($id) ?></h2>
+        <?php if ($mensaje !== ''): ?>
+            <p class="<?= str_starts_with($mensaje, 'ERROR') ? 'mensaje' : 'aviso' ?>"><?= e($mensaje) ?></p>
+        <?php endif; ?>
+        <?php if ($guardado): ?>
+            <p>Guardado el <strong><?= e(date('d/m/Y H:i:s', strtotime($guardado['fecha']))) ?></strong>
+                por la cuenta <strong><?= e($guardado['cuenta']) ?></strong>
+                en <code>~/dba_planes/<?= e(basename($archivoAntes)) ?></code>.</p>
+        <?php else: ?>
+            <p class="nota">Todavía no se ha guardado. Se guarda una sola vez, antes de crear el índice.</p>
+            <form method="post" action="diagnostico.php?caso=<?= e($id) ?>">
+                <input type="hidden" name="csrf" value="<?= e($_SESSION['csrf']) ?>">
+                <button type="submit">Guardar plan (antes)</button>
+            </form>
+        <?php endif; ?>
     </div>
 
     <!-- El plan -->
