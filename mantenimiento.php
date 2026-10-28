@@ -4,6 +4,11 @@
  *
  * - Consulta estadísticas de tablas de la base configurada.
  * - Actualiza estadísticas de UNA tabla mediante ANALYZE TABLE.
+ * - Pide confirmación en dos pasos, solo con PHP (sin JavaScript):
+ *     paso 1 (confirmar): se valida la tabla y se guarda una confirmación
+ *                         pendiente, de un solo uso, en la sesión.
+ *     paso 2 (ejecutar):  solo corre ANALYZE si la confirmación pendiente
+ *                         existe, no venció y su token coincide.
  * - Valida tablas autorizadas y token CSRF.
  * - Registra intentos en una bitácora privada fuera de public_html.
  * - Evita operaciones simultáneas sobre la misma tabla.
@@ -37,6 +42,9 @@ $logMantenimiento = $CONFIG['log_mantenimiento']
     ?? (dirname($CONFIG['respaldos_dir']) . '/mantenimiento.jsonl');
 
 $dirBloqueos = dirname($logMantenimiento) . '/.bloqueos_mantenimiento';
+
+/* Segundos que dura vigente una confirmación pendiente. */
+const MT04_VIGENCIA_CONFIRMACION = 120;
 
 if (empty($_SESSION['csrf'])) {
     $_SESSION['csrf'] = bin2hex(random_bytes(32));
@@ -235,19 +243,53 @@ try {
 }
 
 /* =========================================================
-   3. PROCESAR ACTUALIZACIÓN DE UNA TABLA
+   3. PROCESAR LOS PASOS DEL FORMULARIO
+
+   paso = confirmar : valida y deja una confirmación pendiente
+   paso = cancelar  : descarta la confirmación pendiente
+   paso = ejecutar  : ejecuta ANALYZE TABLE si la confirmación vale
    ========================================================= */
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $inicioTimestamp = microtime(true);
     $inicio = date('Y-m-d H:i:s P');
-    $tablaSolicitada = $_POST['tabla'] ?? '';
 
-    // Limitar el texto utilizado en la bitácora.
+    $paso = $_POST['paso'] ?? '';
+    if (!is_string($paso)) {
+        $paso = '';
+    }
+
+    $tablaSolicitada = $_POST['tabla'] ?? '';
     if (!is_string($tablaSolicitada)) {
         $tablaSolicitada = '';
     }
 
+    $csrfRecibido = $_POST['csrf'] ?? '';
+    if (!is_string($csrfRecibido)) {
+        $csrfRecibido = '';
+    }
+
+    $tokenRecibido = $_POST['token'] ?? '';
+    if (!is_string($tokenRecibido)) {
+        $tokenRecibido = '';
+    }
+
+    /*
+     * Cualquier POST consume la confirmación pendiente:
+     * es de un solo uso. El paso "confirmar" crea una nueva.
+     */
+    $pendiente = $_SESSION['mt04_pendiente'] ?? null;
+    unset($_SESSION['mt04_pendiente']);
+
+    /*
+     * Al ejecutar, la tabla sale de la confirmación guardada en el
+     * servidor, nunca de lo que envíe el navegador en este paso.
+     */
+    if ($paso === 'ejecutar' && is_array($pendiente)) {
+        $tablaSolicitada = (string)($pendiente['tabla'] ?? '');
+    }
+
+    // Limitar el texto utilizado en la bitácora.
     $tablaSolicitada = mb_substr($tablaSolicitada, 0, 128);
 
     $motor = 'MariaDB';
@@ -262,130 +304,168 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $despues = null;
     $bloqueo = null;
 
+    // Los pasos "confirmar" y "cancelar" correctos no se registran.
+    $registrar = true;
+
     try {
         // 1. Validar CSRF.
-        if (
-            !hash_equals(
-                (string)$_SESSION['csrf'],
-                (string)($_POST['csrf'] ?? '')
-            )
-        ) {
+        if (!hash_equals((string)$_SESSION['csrf'], $csrfRecibido)) {
             $accion = 'Operación rechazada';
             $detalle = 'Token de seguridad inválido.';
             throw new RuntimeException('Solicitud no válida.');
         }
 
-        // 2. No se permite operar si falló la conexión.
-        if (!$pdo || !$info) {
-            $detalle = 'No hay conexión disponible con la base de datos.';
-            throw new RuntimeException('Conexión no disponible.');
-        }
-
-        // 3. La tabla debe existir en el catálogo autorizado.
-        if (
-            $tablaSolicitada === '' ||
-            !array_key_exists($tablaSolicitada, $mapaTablas)
-        ) {
+        // 2. El paso debe ser uno de los tres conocidos.
+        if (!in_array($paso, ['confirmar', 'cancelar', 'ejecutar'], true)) {
             $accion = 'Operación rechazada';
-            $detalle = 'Tabla inexistente o no autorizada.';
-            throw new RuntimeException('Tabla no autorizada.');
+            $detalle = 'Paso de la solicitud no válido.';
+            throw new RuntimeException('Paso no válido.');
         }
 
-        // 4. Preparar un bloqueo por tabla.
-        if (
-            !is_dir($dirBloqueos) &&
-            !@mkdir($dirBloqueos, 0700, true) &&
-            !is_dir($dirBloqueos)
-        ) {
-            $detalle = 'No se pudo preparar el control de concurrencia.';
-            throw new RuntimeException('No se pudo preparar el bloqueo.');
-        }
-
-        @chmod($dirBloqueos, 0700);
-
-        $nombreBloqueo = hash(
-            'sha256',
-            $baseRegistro . "\0" . $tablaSolicitada
-        );
-
-        $bloqueo = @fopen(
-            $dirBloqueos . '/' . $nombreBloqueo . '.lock',
-            'c'
-        );
-
-        if ($bloqueo === false) {
-            $detalle = 'No se pudo establecer el bloqueo de la tabla.';
-            throw new RuntimeException('No se pudo abrir el bloqueo.');
-        }
-
-        @chmod($dirBloqueos . '/' . $nombreBloqueo . '.lock', 0600);
-
-        if (!flock($bloqueo, LOCK_EX | LOCK_NB)) {
-            $accion = 'Operación rechazada';
-            $detalle = 'Ya hay una operación en curso sobre esta tabla.';
-            throw new RuntimeException('Tabla ocupada.');
-        }
-
-        // 5. Obtener valores anteriores.
-        $antes = mt04_obtener_estadistica($pdo, $tablaSolicitada);
-
-        if ($antes === null) {
-            $accion = 'Operación rechazada';
-            $detalle = 'La tabla dejó de estar disponible o autorizada.';
-            throw new RuntimeException('Tabla no disponible.');
-        }
-
-        /*
-         * 6. ANALYZE TABLE sobre una sola tabla.
-         * Los identificadores proceden del catálogo autorizado.
-         */
-        $sqlAnalyze =
-            'ANALYZE TABLE ' .
-            mt04_identificador($baseRegistro) . '.' .
-            mt04_identificador($tablaSolicitada);
-
-        $stmt = $pdo->query($sqlAnalyze);
-        $respuestas = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        /*
-         * MariaDB normalmente devuelve una fila con:
-         * Table, Op, Msg_type y Msg_text.
-         * Solo se acepta éxito si existe un estado OK y
-         * ninguna fila indica error.
-         */
-        $hayEstadoOk = false;
-        $hayErrorMotor = false;
-
-        foreach ($respuestas as $respuesta) {
-            $tipo = strtolower((string)($respuesta['Msg_type'] ?? ''));
-            $mensajeMotor = trim((string)($respuesta['Msg_text'] ?? ''));
-
-            if ($tipo === 'error') {
-                $hayErrorMotor = true;
+        if ($paso === 'cancelar') {
+            // Ya se descartó la confirmación pendiente arriba.
+            $registrar = false;
+        } else {
+            // 3. No se permite operar si falló la conexión.
+            if (!$pdo || !$info) {
+                $detalle = 'No hay conexión disponible con la base de datos.';
+                throw new RuntimeException('Conexión no disponible.');
             }
 
+            // 4. Para ejecutar, debe haber una confirmación vigente.
+            if ($paso === 'ejecutar') {
+                $confirmacionValida =
+                    is_array($pendiente) &&
+                    isset($pendiente['token'], $pendiente['tabla'], $pendiente['expira']) &&
+                    hash_equals((string)$pendiente['token'], $tokenRecibido) &&
+                    (int)$pendiente['expira'] >= time();
+
+                if (!$confirmacionValida) {
+                    $accion = 'Operación rechazada';
+                    $detalle = 'La confirmación no existe, venció o ya fue utilizada.';
+                    throw new RuntimeException('Confirmación no válida.');
+                }
+            }
+
+            // 5. La tabla debe existir en el catálogo autorizado.
             if (
-                $tipo === 'status' &&
-                strcasecmp($mensajeMotor, 'OK') === 0
+                $tablaSolicitada === '' ||
+                !array_key_exists($tablaSolicitada, $mapaTablas)
             ) {
-                $hayEstadoOk = true;
+                $accion = 'Operación rechazada';
+                $detalle = 'Tabla inexistente o no autorizada.';
+                throw new RuntimeException('Tabla no autorizada.');
             }
-        }
 
-        if ($hayErrorMotor || !$hayEstadoOk) {
-            $detalle = 'El motor no confirmó correctamente la actualización de estadísticas.';
-            throw new RuntimeException('ANALYZE no confirmó éxito.');
-        }
+            if ($paso === 'confirmar') {
+                // Paso 1: dejar la confirmación pendiente y volver a la página.
+                $_SESSION['mt04_pendiente'] = [
+                    'tabla'  => $tablaSolicitada,
+                    'token'  => bin2hex(random_bytes(16)),
+                    'expira' => time() + MT04_VIGENCIA_CONFIRMACION,
+                ];
 
-        $resultado = 'OK';
-        $detalle = 'MariaDB confirmó la actualización de estadísticas.';
+                $registrar = false;
+            } else {
+                // Paso 2: ejecutar.
 
-        // 7. Volver a consultar los datos de la tabla.
-        $despues = mt04_obtener_estadistica($pdo, $tablaSolicitada);
+                // 6. Preparar un bloqueo por tabla.
+                if (
+                    !is_dir($dirBloqueos) &&
+                    !@mkdir($dirBloqueos, 0700, true) &&
+                    !is_dir($dirBloqueos)
+                ) {
+                    $detalle = 'No se pudo preparar el control de concurrencia.';
+                    throw new RuntimeException('No se pudo preparar el bloqueo.');
+                }
 
-        if ($despues === null) {
-            // La operación sí fue confirmada por el motor.
-            $detalle .= ' No fue posible recuperar las estadísticas posteriores.';
+                @chmod($dirBloqueos, 0700);
+
+                $nombreBloqueo = hash(
+                    'sha256',
+                    $baseRegistro . "\0" . $tablaSolicitada
+                );
+
+                $bloqueo = @fopen(
+                    $dirBloqueos . '/' . $nombreBloqueo . '.lock',
+                    'c'
+                );
+
+                if ($bloqueo === false) {
+                    $detalle = 'No se pudo establecer el bloqueo de la tabla.';
+                    throw new RuntimeException('No se pudo abrir el bloqueo.');
+                }
+
+                @chmod($dirBloqueos . '/' . $nombreBloqueo . '.lock', 0600);
+
+                if (!flock($bloqueo, LOCK_EX | LOCK_NB)) {
+                    $accion = 'Operación rechazada';
+                    $detalle = 'Ya hay una operación en curso sobre esta tabla.';
+                    throw new RuntimeException('Tabla ocupada.');
+                }
+
+                // 7. Obtener valores anteriores.
+                $antes = mt04_obtener_estadistica($pdo, $tablaSolicitada);
+
+                if ($antes === null) {
+                    $accion = 'Operación rechazada';
+                    $detalle = 'La tabla dejó de estar disponible o autorizada.';
+                    throw new RuntimeException('Tabla no disponible.');
+                }
+
+                /*
+                 * 8. ANALYZE TABLE sobre una sola tabla.
+                 * Los identificadores proceden del catálogo autorizado.
+                 */
+                $sqlAnalyze =
+                    'ANALYZE TABLE ' .
+                    mt04_identificador($baseRegistro) . '.' .
+                    mt04_identificador($tablaSolicitada);
+
+                $stmt = $pdo->query($sqlAnalyze);
+                $respuestas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                /*
+                 * MariaDB normalmente devuelve una fila con:
+                 * Table, Op, Msg_type y Msg_text.
+                 * Solo se acepta éxito si existe un estado OK y
+                 * ninguna fila indica error.
+                 */
+                $hayEstadoOk = false;
+                $hayErrorMotor = false;
+
+                foreach ($respuestas as $respuesta) {
+                    $tipo = strtolower((string)($respuesta['Msg_type'] ?? ''));
+                    $mensajeMotor = trim((string)($respuesta['Msg_text'] ?? ''));
+
+                    if ($tipo === 'error') {
+                        $hayErrorMotor = true;
+                    }
+
+                    if (
+                        $tipo === 'status' &&
+                        strcasecmp($mensajeMotor, 'OK') === 0
+                    ) {
+                        $hayEstadoOk = true;
+                    }
+                }
+
+                if ($hayErrorMotor || !$hayEstadoOk) {
+                    $detalle = 'El motor no confirmó correctamente la actualización de estadísticas.';
+                    throw new RuntimeException('ANALYZE no confirmó éxito.');
+                }
+
+                $resultado = 'OK';
+                $detalle = 'MariaDB confirmó la actualización de estadísticas.';
+
+                // 9. Volver a consultar los datos de la tabla.
+                $despues = mt04_obtener_estadistica($pdo, $tablaSolicitada);
+
+                if ($despues === null) {
+                    // La operación sí fue confirmada por el motor.
+                    $detalle .= ' No fue posible recuperar las estadísticas posteriores.';
+                }
+            }
         }
     } catch (Throwable $ex) {
         if ($resultado !== 'OK') {
@@ -399,40 +479,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             fclose($bloqueo);
         }
 
-        $duracion = microtime(true) - $inicioTimestamp;
+        if ($registrar) {
+            $duracion = microtime(true) - $inicioTimestamp;
 
-        $evento = mt04_evento(
-            $motor,
-            $baseRegistro,
-            $tablaSolicitada !== '' ? $tablaSolicitada : '(sin identificar)',
-            $accion,
-            $resultado,
-            $detalle,
-            $inicio,
-            $duracion
-        );
+            $evento = mt04_evento(
+                $motor,
+                $baseRegistro,
+                $tablaSolicitada !== '' ? $tablaSolicitada : '(sin identificar)',
+                $accion,
+                $resultado,
+                $detalle,
+                $inicio,
+                $duracion
+            );
 
-        if (!mt04_registrar($logMantenimiento, $evento)) {
-            if ($resultado === 'OK') {
-                $detalle .= ' Advertencia: no se pudo escribir la bitácora.';
-            } else {
-                $detalle .= ' No se pudo completar el registro persistente.';
+            if (!mt04_registrar($logMantenimiento, $evento)) {
+                if ($resultado === 'OK') {
+                    $detalle .= ' Advertencia: no se pudo escribir la bitácora.';
+                } else {
+                    $detalle .= ' No se pudo completar el registro persistente.';
+                }
             }
-        }
 
-        $_SESSION['mt04_resultado'] = [
-            'motor'        => $motor,
-            'base'         => $baseRegistro,
-            'tabla'        => $tablaSolicitada,
-            'accion'       => $accion,
-            'resultado'    => $resultado,
-            'detalle'      => $detalle,
-            'inicio'       => $inicio,
-            'fin'          => date('Y-m-d H:i:s P'),
-            'duracion'     => round($duracion, 3),
-            'antes'        => $antes,
-            'despues'      => $despues,
-        ];
+            $_SESSION['mt04_resultado'] = [
+                'motor'        => $motor,
+                'base'         => $baseRegistro,
+                'tabla'        => $tablaSolicitada,
+                'accion'       => $accion,
+                'resultado'    => $resultado,
+                'detalle'      => $detalle,
+                'inicio'       => $inicio,
+                'fin'          => date('Y-m-d H:i:s P'),
+                'duracion'     => round($duracion, 3),
+                'antes'        => $antes,
+                'despues'      => $despues,
+            ];
+        }
     }
 
     // Evita repetir la operación al actualizar el navegador.
@@ -446,6 +528,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $resultadoOperacion = $_SESSION['mt04_resultado'] ?? null;
 unset($_SESSION['mt04_resultado']);
+
+/* =========================================================
+   4b. CONFIRMACIÓN PENDIENTE (si la hay y sigue vigente)
+   ========================================================= */
+
+$pendiente = $_SESSION['mt04_pendiente'] ?? null;
+
+if ($pendiente !== null) {
+    $pendienteValido =
+        is_array($pendiente) &&
+        isset($pendiente['token'], $pendiente['tabla'], $pendiente['expira']) &&
+        (int)$pendiente['expira'] >= time() &&
+        isset($mapaTablas[(string)$pendiente['tabla']]);
+
+    if (!$pendienteValido) {
+        unset($_SESSION['mt04_pendiente']);
+        $pendiente = null;
+    }
+}
 
 /* =========================================================
    5. LEER LAS ÚLTIMAS DIEZ ENTRADAS DE LA BITÁCORA
@@ -568,6 +669,27 @@ require __DIR__ . '/includes/header.php';
         background: #064e3b;
     }
 
+    .mt04-boton-sec {
+        display: inline-block;
+        padding: 9px 13px;
+        border: 1px solid #b7d4c5;
+        border-radius: 6px;
+        background: #fff;
+        color: #064e3b;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .mt04-boton-sec:hover {
+        background: #ecfdf5;
+    }
+
+    .mt04-boton-sec:focus-visible,
+    .mt04-boton:focus-visible {
+        outline: 3px solid #34d399;
+        outline-offset: 2px;
+    }
+
     .mt04-ok {
         color: #047857;
         font-weight: bold;
@@ -598,6 +720,88 @@ require __DIR__ . '/includes/header.php';
 
     .mt04-explicacion {
         line-height: 1.65;
+    }
+
+    /* ---- Confirmación dentro de la aplicación (solo CSS, sin JavaScript) ---- */
+
+    .mt04-fondo {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(6, 40, 31, .55);
+        backdrop-filter: blur(2px);
+    }
+
+    .mt04-modal {
+        width: min(460px, 100%);
+        max-height: calc(100vh - 32px);
+        overflow-y: auto;
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 20px 50px rgba(6, 78, 59, .25);
+        color: #1f2937;
+        animation: mt04-entrada .15s ease-out;
+    }
+
+    @keyframes mt04-entrada {
+        from { opacity: 0; transform: translateY(8px) scale(.98); }
+        to   { opacity: 1; transform: none; }
+    }
+
+    .mt04-modal-cabecera {
+        padding: 18px 22px 0;
+    }
+
+    .mt04-modal-cabecera h2 {
+        margin: 0;
+        font-size: 19px;
+        color: #064e3b;
+    }
+
+    .mt04-modal-cuerpo {
+        padding: 12px 22px 4px;
+        line-height: 1.55;
+        font-size: 14px;
+    }
+
+    .mt04-modal-cuerpo p {
+        margin: 0 0 10px;
+    }
+
+    .mt04-modal-datos {
+        margin: 12px 0;
+        padding: 10px 14px;
+        background: #ecfdf5;
+        border: 1px solid #dce9e1;
+        border-radius: 8px;
+    }
+
+    .mt04-modal-datos div + div {
+        margin-top: 4px;
+    }
+
+    .mt04-modal-datos span {
+        color: #60776c;
+    }
+
+    .mt04-modal-datos strong {
+        color: #064e3b;
+        overflow-wrap: anywhere;
+    }
+
+    .mt04-modal-pie {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 14px 22px 20px;
+    }
+
+    .mt04-modal-pie form {
+        margin: 0;
     }
 
     @media (max-width: 700px) {
@@ -754,6 +958,103 @@ require __DIR__ . '/includes/header.php';
 
     <?php endif; ?>
 
+    <!-- CONFIRMACIÓN PENDIENTE (ventana dentro de la aplicación) -->
+
+    <?php if (is_array($pendiente)): ?>
+
+        <?php $tp = $mapaTablas[(string)$pendiente['tabla']]; ?>
+
+        <div class="mt04-fondo">
+            <div
+                class="mt04-modal"
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="mt04-modal-titulo"
+                aria-describedby="mt04-modal-desc"
+            >
+                <div class="mt04-modal-cabecera">
+                    <h2 id="mt04-modal-titulo">Actualizar estadísticas</h2>
+                </div>
+
+                <div class="mt04-modal-cuerpo" id="mt04-modal-desc">
+                    <p>Se ejecutará <strong>ANALYZE TABLE</strong> sobre:</p>
+
+                    <div class="mt04-modal-datos">
+                        <div>
+                            <span>Base:</span>
+                            <strong><?= mt04_e($bd) ?></strong>
+                        </div>
+
+                        <div>
+                            <span>Tabla:</span>
+                            <strong><?= mt04_e($tp['nombre']) ?></strong>
+                        </div>
+
+                        <div>
+                            <span>Filas estimadas:</span>
+                            <strong><?= mt04_e(mt04_filas($tp['filas'])) ?></strong>
+                        </div>
+
+                        <div>
+                            <span>Tamaño total:</span>
+                            <strong>
+                                <?= mt04_e(
+                                    mt04_bytes(
+                                        (is_numeric($tp['datos']) && is_numeric($tp['indices']))
+                                            ? (float)$tp['datos'] + (float)$tp['indices']
+                                            : null
+                                    )
+                                ) ?>
+                            </strong>
+                        </div>
+                    </div>
+
+                    <p class="mt04-nota">
+                        No elimina filas ni reconstruye la tabla. Solo actualiza
+                        las estadísticas que usa el optimizador de consultas.
+                        Esta confirmación vence a las
+                        <?= mt04_e(date('H:i:s', (int)$pendiente['expira'])) ?>.
+                    </p>
+                </div>
+
+                <div class="mt04-modal-pie">
+                    <form method="post" action="mantenimiento.php">
+                        <input
+                            type="hidden"
+                            name="csrf"
+                            value="<?= mt04_e($_SESSION['csrf']) ?>"
+                        >
+                        <input type="hidden" name="paso" value="cancelar">
+
+                        <!-- La opción segura recibe el foco inicial -->
+                        <button class="mt04-boton-sec" type="submit" autofocus>
+                            Cancelar
+                        </button>
+                    </form>
+
+                    <form method="post" action="mantenimiento.php">
+                        <input
+                            type="hidden"
+                            name="csrf"
+                            value="<?= mt04_e($_SESSION['csrf']) ?>"
+                        >
+                        <input type="hidden" name="paso" value="ejecutar">
+                        <input
+                            type="hidden"
+                            name="token"
+                            value="<?= mt04_e($pendiente['token']) ?>"
+                        >
+
+                        <button class="mt04-boton" type="submit">
+                            Sí, actualizar
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+    <?php endif; ?>
+
     <!-- PANEL DE TABLAS -->
 
     <div class="mt04-caja">
@@ -818,21 +1119,14 @@ require __DIR__ . '/includes/header.php';
                             </td>
 
                             <td>
-                                <form
-                                    method="post"
-                                    onsubmit="return confirm(
-                                        '¿Confirma actualizar las estadísticas?\\n\\n' +
-                                        'Base: <?= mt04_e(addslashes($bd)) ?>\\n' +
-                                        'Tabla: <?= mt04_e(addslashes($t['nombre'])) ?>\\n\\n' +
-                                        'Se ejecutará ANALYZE TABLE. ' +
-                                        'No elimina filas ni reconstruye la tabla.'
-                                    );"
-                                >
+                                <form method="post" action="mantenimiento.php">
                                     <input
                                         type="hidden"
                                         name="csrf"
                                         value="<?= mt04_e($_SESSION['csrf']) ?>"
                                     >
+
+                                    <input type="hidden" name="paso" value="confirmar">
 
                                     <input
                                         type="hidden"
@@ -955,6 +1249,14 @@ require __DIR__ . '/includes/header.php';
         </li>
 
         <li>
+            <strong>Confirmación:</strong>
+            la actualización se hace en dos pasos. Primero el servidor
+            guarda una confirmación pendiente, de un solo uso y con
+            vigencia de <?= (int)(MT04_VIGENCIA_CONFIRMACION / 60) ?> minutos;
+            solo al aceptarla se ejecuta ANALYZE TABLE.
+        </li>
+
+        <li>
             <strong>Seguridad:</strong>
             se utiliza un token CSRF, se valida la tabla contra el catálogo
             autorizado y se bloquean operaciones simultáneas sobre la misma
@@ -965,6 +1267,7 @@ require __DIR__ . '/includes/header.php';
             <strong>Bitácora:</strong>
             cada intento procesado se registra en un archivo privado,
             incluyendo las solicitudes rechazadas y su duración.
+            Abrir o cancelar la confirmación no genera registro.
         </li>
     </ul>
 </div>
