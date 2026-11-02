@@ -23,7 +23,7 @@ return [
         ['num' => '03', 'titulo' => 'Diagnóstico de consultas', 'archivo' => 'diagnostico.php',
          'desc' => 'Plan de ejecución (EXPLAIN) de Q01 y Q02, y ensayo antes y después.'],
         ['num' => '04', 'titulo' => 'Mantenimiento', 'archivo' => 'mantenimiento.php', 'desc' => 'Mantenimiento de la base de datos'],
-        ['num' => '05', 'titulo' => 'Próximamente', 'archivo' => null, 'desc' => 'Módulo disponible próximamente.'],
+        ['num' => '05', 'titulo' => 'Importar y exportar CSV', 'archivo' => 'csv.php', 'desc' => 'Descargar tablas como CSV y crear tablas nuevas a partir de un CSV.'],
         ['num' => '06', 'titulo' => 'Próximamente', 'archivo' => null, 'desc' => 'Módulo disponible próximamente.'],
     ],
 ];
