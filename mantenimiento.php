@@ -593,7 +593,7 @@ require __DIR__ . '/includes/header.php';
         flex: 1;
         min-width: 170px;
         background: #fff;
-        border: 1px solid #dce9e1;
+        border: 1px solid #d6ddeb;
         border-radius: 10px;
         padding: 14px 16px;
     }
@@ -601,20 +601,20 @@ require __DIR__ . '/includes/header.php';
     .mt04-resumen span {
         display: block;
         font-size: 13px;
-        color: #60776c;
+        color: #5b6475;
     }
 
     .mt04-resumen strong {
         display: block;
         margin-top: 5px;
         font-size: 17px;
-        color: #064e3b;
+        color: #0e235a;
         overflow-wrap: anywhere;
     }
 
     .mt04-caja {
         background: #fff;
-        border: 1px solid #dce9e1;
+        border: 1px solid #d6ddeb;
         border-radius: 10px;
         padding: 16px;
         margin: 20px 0;
@@ -622,7 +622,7 @@ require __DIR__ . '/includes/header.php';
 
     .mt04-caja h2 {
         margin-top: 0;
-        color: #064e3b;
+        color: #0e235a;
         font-size: 19px;
     }
 
@@ -636,14 +636,14 @@ require __DIR__ . '/includes/header.php';
     .mt04-tabla th,
     .mt04-tabla td {
         padding: 10px 12px;
-        border-bottom: 1px solid #dce9e1;
+        border-bottom: 1px solid #d6ddeb;
         text-align: left;
         vertical-align: top;
     }
 
     .mt04-tabla th {
-        background: #ecfdf5;
-        color: #064e3b;
+        background: #eef2fa;
+        color: #0e235a;
     }
 
     .mt04-tabla td {
@@ -659,14 +659,14 @@ require __DIR__ . '/includes/header.php';
         padding: 9px 13px;
         border: 0;
         border-radius: 6px;
-        background: #047857;
+        background: #1d3f8f;
         color: white;
         font-weight: bold;
         cursor: pointer;
     }
 
     .mt04-boton:hover {
-        background: #064e3b;
+        background: #0e235a;
     }
 
     .mt04-boton-sec {
@@ -675,23 +675,23 @@ require __DIR__ . '/includes/header.php';
         border: 1px solid #b7d4c5;
         border-radius: 6px;
         background: #fff;
-        color: #064e3b;
+        color: #0e235a;
         font-weight: bold;
         cursor: pointer;
     }
 
     .mt04-boton-sec:hover {
-        background: #ecfdf5;
+        background: #eef2fa;
     }
 
     .mt04-boton-sec:focus-visible,
     .mt04-boton:focus-visible {
-        outline: 3px solid #34d399;
+        outline: 3px solid #dac3b1;
         outline-offset: 2px;
     }
 
     .mt04-ok {
-        color: #047857;
+        color: #1d3f8f;
         font-weight: bold;
     }
 
@@ -704,8 +704,8 @@ require __DIR__ . '/includes/header.php';
         padding: 12px 15px;
         border-radius: 8px;
         margin: 15px 0;
-        background: #d1fae5;
-        color: #064e3b;
+        background: #dce4f5;
+        color: #0e235a;
     }
 
     .mt04-mensaje-error {
@@ -759,7 +759,7 @@ require __DIR__ . '/includes/header.php';
     .mt04-modal-cabecera h2 {
         margin: 0;
         font-size: 19px;
-        color: #064e3b;
+        color: #0e235a;
     }
 
     .mt04-modal-cuerpo {
@@ -775,8 +775,8 @@ require __DIR__ . '/includes/header.php';
     .mt04-modal-datos {
         margin: 12px 0;
         padding: 10px 14px;
-        background: #ecfdf5;
-        border: 1px solid #dce9e1;
+        background: #eef2fa;
+        border: 1px solid #d6ddeb;
         border-radius: 8px;
     }
 
@@ -785,11 +785,11 @@ require __DIR__ . '/includes/header.php';
     }
 
     .mt04-modal-datos span {
-        color: #60776c;
+        color: #5b6475;
     }
 
     .mt04-modal-datos strong {
-        color: #064e3b;
+        color: #0e235a;
         overflow-wrap: anywhere;
     }
 

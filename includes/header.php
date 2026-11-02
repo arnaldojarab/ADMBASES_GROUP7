@@ -13,10 +13,11 @@ $activo = $activo ?? basename($_SERVER['SCRIPT_NAME']);
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= e($titulo) ?> | <?= e($APP['nombre']) ?></title>
     <link rel="stylesheet" href="assets/estilos.css">
+    <link rel="icon" href="assets/logo_dask.png">
 </head>
 <body>
 <header class="topbar">
-    <a class="brand" href="index.php"><?= e($APP['nombre']) ?> <span><?= e($APP['grupo']) ?></span></a>
+    <a class="brand" href="index.php"><img src="assets/logo_dask.png" alt="Logo DASK"><?= e($APP['nombre']) ?> <span><?= e($APP['grupo']) ?></span></a>
     <div class="account">
         <span>Usuario: <strong><?= e($_SESSION['usuario'] ?? '') ?></strong></span>
         <a class="logout" href="logout.php">Cerrar sesión</a>

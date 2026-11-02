@@ -1,9 +1,9 @@
 /* Consola DBA - estilos compartidos (paleta verde del grupo) */
 :root {
-    --green-950: #052e24; --green-900: #064e3b; --green-700: #047857;
-    --green-100: #d1fae5; --green-50: #ecfdf5;
-    --page: #f1f7f4; --text: #253b32; --muted: #60776c;
-    --border: #dce9e1; --white: #ffffff; --danger: #dc2626;
+    --green-950: #0a1a45; --green-900: #0e235a; --green-700: #1d3f8f;
+    --green-100: #dce4f5; --green-50: #eef2fa;
+    --page: #f3f5fa; --text: #1e2433; --muted: #5b6475;
+    --border: #d6ddeb; --white: #ffffff; --danger: #dc2626;
 }
 * { box-sizing: border-box; }
 body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: var(--page); color: var(--text); }
@@ -21,10 +21,10 @@ a { color: var(--green-700); }
 .logout:hover { background: #b91c1c; }
 
 .menu { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 2%; background: var(--green-900); }
-.menu a { padding: 11px 14px; color: #d1fae5; text-decoration: none; font-size: 14px; border-bottom: 3px solid transparent; }
+.menu a { padding: 11px 14px; color: #dce4f5; text-decoration: none; font-size: 14px; border-bottom: 3px solid transparent; }
 .menu a small { display: block; font-size: 11px; opacity: .8; }
 .menu a:hover { background: #ffffff14; }
-.menu a.activo { color: white; border-bottom-color: #34d399; background: #ffffff1a; }
+.menu a.activo { color: white; border-bottom-color: #dac3b1; background: #ffffff1a; }
 .menu a.pendiente { opacity: .6; }
 
 main { width: min(1200px, 92%); margin: 36px auto 40px; }
@@ -39,7 +39,7 @@ h1 { margin: 0 0 18px; color: var(--green-900); font-size: 27px; }
 .card .num { margin: 0 0 6px; font-size: 13px; color: var(--muted); letter-spacing: .04em; }
 .card h2 { margin: 0 0 12px; color: var(--green-700); font-size: 20px; }
 .card p { margin: 0 0 20px; color: var(--muted); line-height: 1.5; }
-.card-pendiente { background: #f8fbf9; }
+.card-pendiente { background: #f7f8fc; }
 .card-pendiente h2 { color: var(--muted); }
 .action { margin-top: auto; padding: 10px 18px; border-radius: 5px; background: var(--green-700); color: white; text-decoration: none; font-weight: 700; font-size: 14px; }
 .action:hover { background: var(--green-900); }
@@ -67,3 +67,8 @@ h1 { margin: 0 0 18px; color: var(--green-900); font-size: 27px; }
 
 @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } main { margin-top: 24px; } }
+
+/* Logo DASK */
+.brand { display: inline-flex; align-items: center; gap: 10px; }
+.brand img { height: 40px; width: 40px; object-fit: contain; background: #fff; border-radius: 8px; padding: 3px; }
+.login-logo { display: block; width: 120px; margin: 0 auto 12px; }

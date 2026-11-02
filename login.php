@@ -46,9 +46,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Iniciar sesión | <?= e($APP['nombre']) ?></title>
     <link rel="stylesheet" href="assets/estilos.css">
+    <link rel="icon" href="assets/logo_dask.png">
 </head>
 <body class="login-page">
 <main class="login-card">
+    <img class="login-logo" src="assets/logo_dask.png" alt="Logo DASK">
     <h1><?= e($APP['nombre']) ?></h1>
     <p class="muted"><?= e($APP['grupo']) ?> · <?= e($APP['motor']) ?> · versión <?= e($APP['version']) ?></p>
 

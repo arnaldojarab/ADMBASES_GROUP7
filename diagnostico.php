@@ -249,28 +249,28 @@ require __DIR__ . '/includes/header.php';
 ?>
 <style>
     .resumen { display: flex; flex-wrap: wrap; gap: 14px; margin: 20px 0; }
-    .resumen div { flex: 1; min-width: 160px; background: #fff; border: 1px solid #dce9e1; border-radius: 10px; padding: 12px 16px; }
-    .resumen span { display: block; font-size: 13px; color: #60776c; }
-    .resumen strong { font-size: 17px; color: #064e3b; word-break: break-word; }
+    .resumen div { flex: 1; min-width: 160px; background: #fff; border: 1px solid #d6ddeb; border-radius: 10px; padding: 12px 16px; }
+    .resumen span { display: block; font-size: 13px; color: #5b6475; }
+    .resumen strong { font-size: 17px; color: #0e235a; word-break: break-word; }
     .casos { display: flex; gap: 10px; margin: 10px 0 20px; }
-    .casos a { padding: 10px 18px; border-radius: 6px; border: 1px solid #047857; color: #047857; text-decoration: none; font-weight: bold; }
-    .casos a.sel { background: #047857; color: #fff; }
-    .caja { background: #fff; border: 1px solid #dce9e1; border-radius: 10px; padding: 14px 18px; margin: 18px 0; }
-    .caja h2 { margin-top: 0; font-size: 18px; color: #064e3b; }
+    .casos a { padding: 10px 18px; border-radius: 6px; border: 1px solid #1d3f8f; color: #1d3f8f; text-decoration: none; font-weight: bold; }
+    .casos a.sel { background: #1d3f8f; color: #fff; }
+    .caja { background: #fff; border: 1px solid #d6ddeb; border-radius: 10px; padding: 14px 18px; margin: 18px 0; }
+    .caja h2 { margin-top: 0; font-size: 18px; color: #0e235a; }
     .caja pre { background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
     .tabla-scroll { overflow-x: auto; }
     .tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .tabla th, .tabla td { padding: 8px 10px; border-bottom: 1px solid #dce9e1; text-align: left; white-space: nowrap; }
-    .tabla th { background: #ecfdf5; color: #064e3b; }
+    .tabla th, .tabla td { padding: 8px 10px; border-bottom: 1px solid #d6ddeb; text-align: left; white-space: nowrap; }
+    .tabla th { background: #eef2fa; color: #0e235a; }
     .mensaje { padding: 10px 14px; border-radius: 8px; background: #fee2e2; color: #991b1b; }
-    .interp h3 { margin: 14px 0 4px; font-size: 15px; color: #047857; }
+    .interp h3 { margin: 14px 0 4px; font-size: 15px; color: #1d3f8f; }
     .interp ul { margin: 0; padding-left: 20px; line-height: 1.6; }
-    .nota { color: #60776c; font-size: 14px; }
+    .nota { color: #5b6475; font-size: 14px; }
     .aviso { padding: 10px 14px; border-radius: 8px; background: #dcfce7; color: #166534; }
     .tabla td.cambio { background: #fef9c3; font-weight: bold; }
     .ok { color: #166534; font-weight: bold; }
     .mal { color: #991b1b; font-weight: bold; }
-    .caja button { padding: 10px 18px; border: 0; border-radius: 6px; background: #047857; color: #fff; font-weight: bold; cursor: pointer; }
+    .caja button { padding: 10px 18px; border: 0; border-radius: 6px; background: #1d3f8f; color: #fff; font-weight: bold; cursor: pointer; }
 </style>
 
 <h1>Módulo 03: Diagnóstico de consultas</h1>

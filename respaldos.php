@@ -67,19 +67,19 @@ $activo = 'respaldos.php';
 require __DIR__ . '/includes/header.php';
 ?>
 <style>
-    .boton { padding: 11px 20px; border: 0; border-radius: 6px; background: #047857; color: #fff; font-size: 15px; font-weight: bold; cursor: pointer; }
-    .boton:hover { background: #064e3b; }
-    .mensaje { padding: 10px 14px; border-radius: 8px; background: #d1fae5; color: #064e3b; }
+    .boton { padding: 11px 20px; border: 0; border-radius: 6px; background: #1d3f8f; color: #fff; font-size: 15px; font-weight: bold; cursor: pointer; }
+    .boton:hover { background: #0e235a; }
+    .mensaje { padding: 10px 14px; border-radius: 8px; background: #dce4f5; color: #0e235a; }
     .mensaje-error { background: #fee2e2; color: #991b1b; }
     .resumen { display: flex; flex-wrap: wrap; gap: 14px; margin: 20px 0; }
-    .resumen div { flex: 1; min-width: 160px; background: #fff; border: 1px solid #dce9e1; border-radius: 10px; padding: 12px 16px; }
-    .resumen span { display: block; font-size: 13px; color: #60776c; }
-    .resumen strong { font-size: 19px; color: #064e3b; }
+    .resumen div { flex: 1; min-width: 160px; background: #fff; border: 1px solid #d6ddeb; border-radius: 10px; padding: 12px 16px; }
+    .resumen span { display: block; font-size: 13px; color: #5b6475; }
+    .resumen strong { font-size: 19px; color: #0e235a; }
     .tabla { width: 100%; border-collapse: collapse; background: #fff; font-size: 14px; }
-    .tabla th, .tabla td { padding: 10px 12px; border-bottom: 1px solid #dce9e1; text-align: left; }
-    .tabla th { background: #ecfdf5; color: #064e3b; }
+    .tabla th, .tabla td { padding: 10px 12px; border-bottom: 1px solid #d6ddeb; text-align: left; }
+    .tabla th { background: #eef2fa; color: #0e235a; }
     .tabla .num { text-align: right; }
-    .estado-ok { color: #047857; font-weight: bold; }
+    .estado-ok { color: #1d3f8f; font-weight: bold; }
     .estado-error { color: #b91c1c; font-weight: bold; }
 </style>
 

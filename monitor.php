@@ -75,21 +75,21 @@ require __DIR__ . '/includes/header.php';
 <style>
     .mensaje { padding: 10px 14px; border-radius: 8px; background: #fee2e2; color: #991b1b; }
     .resumen { display: flex; flex-wrap: wrap; gap: 14px; margin: 20px 0; }
-    .resumen div { flex: 1; min-width: 160px; background: #fff; border: 1px solid #dce9e1; border-radius: 10px; padding: 12px 16px; }
-    .resumen span { display: block; font-size: 13px; color: #60776c; }
-    .resumen strong { font-size: 19px; color: #064e3b; word-break: break-word; }
+    .resumen div { flex: 1; min-width: 160px; background: #fff; border: 1px solid #d6ddeb; border-radius: 10px; padding: 12px 16px; }
+    .resumen span { display: block; font-size: 13px; color: #5b6475; }
+    .resumen strong { font-size: 19px; color: #0e235a; word-break: break-word; }
     .tabla { width: 100%; border-collapse: collapse; background: #fff; font-size: 14px; }
-    .tabla th, .tabla td { padding: 10px 12px; border-bottom: 1px solid #dce9e1; text-align: left; }
-    .tabla th { background: #ecfdf5; color: #064e3b; }
+    .tabla th, .tabla td { padding: 10px 12px; border-bottom: 1px solid #d6ddeb; text-align: left; }
+    .tabla th { background: #eef2fa; color: #0e235a; }
     .tabla .num { text-align: right; }
     .tabla tr.top td { background: #fffbeb; }
-    .barra { background: #e5efe9; border-radius: 6px; height: 10px; min-width: 120px; }
-    .barra i { display: block; height: 100%; border-radius: 6px; background: #047857; }
+    .barra { background: #e3e8f2; border-radius: 6px; height: 10px; min-width: 120px; }
+    .barra i { display: block; height: 100%; border-radius: 6px; background: #1d3f8f; }
     .top .barra i { background: #d97706; }
-    .caja { background: #fff; border: 1px solid #dce9e1; border-radius: 10px; padding: 14px 18px; margin: 20px 0; }
+    .caja { background: #fff; border: 1px solid #d6ddeb; border-radius: 10px; padding: 14px 18px; margin: 20px 0; }
     .caja pre { background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
-    .caja h2 { margin-top: 0; font-size: 18px; color: #064e3b; }
-    summary { cursor: pointer; font-weight: bold; color: #064e3b; }
+    .caja h2 { margin-top: 0; font-size: 18px; color: #0e235a; }
+    summary { cursor: pointer; font-weight: bold; color: #0e235a; }
 </style>
 
 <h1>Módulo 01: Monitor de Base de Datos</h1>
