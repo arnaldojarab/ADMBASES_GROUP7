@@ -24,6 +24,6 @@ return [
          'desc' => 'Plan de ejecución (EXPLAIN) de Q01 y Q02, y ensayo antes y después.'],
         ['num' => '04', 'titulo' => 'Mantenimiento', 'archivo' => 'mantenimiento.php', 'desc' => 'Mantenimiento de la base de datos'],
         ['num' => '05', 'titulo' => 'Importar y exportar CSV', 'archivo' => 'csv.php', 'desc' => 'Descargar tablas como CSV y crear tablas nuevas a partir de un CSV.'],
-        ['num' => '06', 'titulo' => 'Próximamente', 'archivo' => null, 'desc' => 'Módulo disponible próximamente.'],
+        ['num' => '06', 'titulo' => 'Editor de consultas SQL', 'archivo' => 'editor.php', 'desc' => 'Ejecucion de consultas SQL personalizadas.'],
     ],
 ];
