@@ -12,6 +12,10 @@
  * - Historial: cada intento queda en una bitácora JSONL privada,
  *            fuera de public_html.
  *
+ * - Ayudas para escribir: consultas sugeridas (PHP, generadas desde el esquema
+ *            real) y, con JavaScript, autocompletado de tablas y columnas más
+ *            un borrador que se conserva al cambiar de módulo (sessionStorage).
+ *
  * Configuración reutilizada desde includes/auth.php ($CONFIG).
  * Claves opcionales de $CONFIG:
  *   'db_editor'    => [...]  cuenta MariaDB propia para este módulo
@@ -624,6 +628,105 @@ function ed_leer_plan(array $f): string
 }
 
 /* =========================================================
+   3b. CONSULTAS SUGERIDAS (generadas desde el esquema real)
+   ========================================================= */
+
+function ed_ident(string $nombre): string
+{
+    return '`' . str_replace('`', '``', $nombre) . '`';
+}
+
+/*
+ * Arma el catálogo de consultas sugeridas con las tablas, columnas y llaves
+ * foráneas de la base. El navegador solo envía la clave (un hash) de la
+ * consulta elegida: el SQL se regenera aquí, nunca se recibe del navegador.
+ */
+function ed_sugerencias(array $esquema, array $relaciones): array
+{
+    $lista = [];
+
+    $agregar = function (string $grupo, string $titulo, string $sql) use (&$lista): void {
+        $lista[substr(sha1($sql), 0, 12)] = [
+            'grupo'  => $grupo,
+            'titulo' => $titulo,
+            'sql'    => $sql,
+        ];
+    };
+
+    $agregar('General', 'Ver las tablas', 'SHOW TABLES');
+
+    $agregar(
+        'General',
+        'Tamaño de cada tabla',
+        "SELECT TABLE_NAME, TABLE_ROWS, DATA_LENGTH, INDEX_LENGTH\n"
+        . "FROM information_schema.TABLES\n"
+        . "WHERE TABLE_SCHEMA = DATABASE()\n"
+        . "  AND TABLE_TYPE = 'BASE TABLE'\n"
+        . "ORDER BY DATA_LENGTH + INDEX_LENGTH DESC"
+    );
+
+    // Un JOIN por cada llave foránea.
+    foreach ($relaciones as $r) {
+        $condiciones = [];
+
+        foreach ($r['pares'] as [$colHijo, $colPadre]) {
+            $condiciones[] = 'b.' . ed_ident($colPadre) . ' = a.' . ed_ident($colHijo);
+        }
+
+        $agregar(
+            'Relaciones (JOIN)',
+            $r['hijo'] . ' → ' . $r['padre'],
+            "SELECT a.*, b.*\n"
+            . 'FROM ' . ed_ident($r['hijo']) . " AS a\n"
+            . 'JOIN ' . ed_ident($r['padre']) . " AS b\n"
+            . '  ON ' . implode("\n AND ", $condiciones) . "\n"
+            . 'LIMIT 20'
+        );
+    }
+
+    // Consultas básicas por tabla.
+    foreach (array_slice($esquema, 0, 25) as $t) {
+        $nombre = ed_ident($t['t']);
+        $grupo  = 'Tabla ' . $t['t'];
+        $fecha  = null;
+        $monto  = null;
+
+        foreach ($t['c'] as [$col, $tipo]) {
+            if ($fecha === null && preg_match('/^(date|datetime|timestamp)/i', $tipo)) {
+                $fecha = $col;
+            }
+
+            if ($monto === null && preg_match('/^(decimal|double|float)/i', $tipo)) {
+                $monto = $col;
+            }
+        }
+
+        $agregar($grupo, 'Primeras filas', "SELECT *\nFROM {$nombre}\nLIMIT 20");
+        $agregar($grupo, 'Contar filas', "SELECT COUNT(*) AS filas\nFROM {$nombre}");
+        $agregar($grupo, 'Estructura (DESCRIBE)', "DESCRIBE {$nombre}");
+        $agregar($grupo, 'Índices', "SHOW INDEX FROM {$nombre}");
+
+        if ($fecha !== null) {
+            $agregar(
+                $grupo,
+                'Más recientes por ' . $fecha,
+                "SELECT *\nFROM {$nombre}\nORDER BY " . ed_ident($fecha) . " DESC\nLIMIT 20"
+            );
+        }
+
+        if ($monto !== null) {
+            $agregar(
+                $grupo,
+                'Suma de ' . $monto,
+                "SELECT COUNT(*) AS filas, SUM(" . ed_ident($monto) . ") AS total\nFROM {$nombre}"
+            );
+        }
+    }
+
+    return $lista;
+}
+
+/* =========================================================
    4. CONEXIÓN
    ========================================================= */
 
@@ -662,6 +765,72 @@ try {
     $pdo = null;
     $errorConexion =
         'No se pudo conectar a la base de datos. Revise la configuración y los permisos.';
+}
+
+/* =========================================================
+   4b. ESQUEMA (autocompletado y consultas sugeridas)
+   ========================================================= */
+
+$esquema = [];
+$relaciones = [];
+$sugerencias = [];
+
+if ($pdo) {
+    try {
+        $porTabla = [];
+
+        $filas = $pdo->query(
+            "SELECT TABLE_NAME AS tabla, COLUMN_NAME AS columna, COLUMN_TYPE AS tipo
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+             ORDER BY TABLE_NAME, ORDINAL_POSITION"
+        )->fetchAll();
+
+        foreach ($filas as $f) {
+            if (!isset($porTabla[$f['tabla']])) {
+                $porTabla[$f['tabla']] = ['t' => $f['tabla'], 'c' => []];
+            }
+
+            $porTabla[$f['tabla']]['c'][] = [$f['columna'], $f['tipo']];
+        }
+
+        $esquema = array_values($porTabla);
+    } catch (Throwable $ex) {
+        error_log('editor.php (esquema): ' . $ex->getMessage());
+    }
+
+    try {
+        $porLlave = [];
+
+        $fks = $pdo->query(
+            "SELECT CONSTRAINT_NAME AS nombre,
+                    TABLE_NAME AS hijo,
+                    COLUMN_NAME AS col_hijo,
+                    REFERENCED_TABLE_NAME AS padre,
+                    REFERENCED_COLUMN_NAME AS col_padre
+             FROM information_schema.KEY_COLUMN_USAGE
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND REFERENCED_TABLE_SCHEMA = DATABASE()
+               AND REFERENCED_TABLE_NAME IS NOT NULL
+             ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION"
+        )->fetchAll();
+
+        foreach ($fks as $f) {
+            $k = $f['hijo'] . "\0" . $f['nombre'];
+
+            if (!isset($porLlave[$k])) {
+                $porLlave[$k] = ['hijo' => $f['hijo'], 'padre' => $f['padre'], 'pares' => []];
+            }
+
+            $porLlave[$k]['pares'][] = [$f['col_hijo'], $f['col_padre']];
+        }
+
+        $relaciones = array_values($porLlave);
+    } catch (Throwable $ex) {
+        error_log('editor.php (llaves foráneas): ' . $ex->getMessage());
+    }
+
+    $sugerencias = ed_sugerencias($esquema, $relaciones);
 }
 
 /* =========================================================
@@ -726,6 +895,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($encontrado && is_string($encontrado[0]['consulta'] ?? null)) {
                 $_SESSION['ed_sql']  = $encontrado[0]['consulta'];
                 $_SESSION['ed_modo'] = ($encontrado[0]['modo'] ?? '') === 'prueba' ? 'prueba' : 'lectura';
+            }
+
+            header('Location: editor.php');
+            exit;
+        }
+
+        // 2b. Cargar una consulta sugerida (el navegador solo envía su clave).
+        if ($accion === 'sugerir') {
+            $claveSug = $_POST['sugerencia'] ?? '';
+
+            if (is_string($claveSug) && isset($sugerencias[$claveSug])) {
+                $_SESSION['ed_sql']  = $sugerencias[$claveSug]['sql'];
+                $_SESSION['ed_modo'] = 'lectura';
             }
 
             header('Location: editor.php');
@@ -1090,6 +1272,83 @@ require __DIR__ . '/includes/header.php';
         line-height: 1.65;
     }
 
+    .ed-caja [hidden] {
+        display: none !important;
+    }
+
+    .ed-sugerir {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        margin: 0 0 14px;
+    }
+
+    .ed-sugerir label {
+        font-size: 13px;
+        color: #5b6475;
+    }
+
+    .ed-sugerir select {
+        flex: 1;
+        min-width: 220px;
+        max-width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #b6c2de;
+        border-radius: 6px;
+        background: #fff;
+        color: #0e235a;
+        font-size: 14px;
+    }
+
+    .ed-envoltura {
+        position: relative;
+    }
+
+    .ed-envoltura .ed-editor {
+        display: block;
+    }
+
+    .ed-lista {
+        position: absolute;
+        left: 12px;
+        top: calc(100% - 6px);
+        z-index: 20;
+        margin: 0;
+        padding: 4px;
+        list-style: none;
+        min-width: 260px;
+        max-width: calc(100% - 24px);
+        background: #fff;
+        border: 1px solid #d6ddeb;
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(14, 35, 90, .18);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+    }
+
+    .ed-lista li {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+
+    .ed-lista li strong {
+        color: #0e235a;
+    }
+
+    .ed-lista li small {
+        color: #5b6475;
+    }
+
+    .ed-lista li:hover,
+    .ed-lista li.ed-sel {
+        background: #eef2fa;
+    }
+
     @media (max-width: 700px) {
         .ed-tabla {
             font-size: 12px;
@@ -1147,10 +1406,42 @@ require __DIR__ . '/includes/header.php';
     <div class="ed-caja">
         <h2>Consulta</h2>
 
+        <?php if ($sugerencias): ?>
+            <form method="post" action="editor.php" class="ed-sugerir">
+                <input type="hidden" name="csrf" value="<?= ed_e($_SESSION['csrf']) ?>">
+                <input type="hidden" name="accion" value="sugerir">
+
+                <label for="ed-sugerencia">Consultas sugeridas</label>
+
+                <select id="ed-sugerencia" name="sugerencia" required>
+                    <option value="">Elija una consulta de ejemplo…</option>
+
+                    <?php $grupoActual = null; ?>
+                    <?php foreach ($sugerencias as $claveSug => $s): ?>
+                        <?php if ($s['grupo'] !== $grupoActual): ?>
+                            <?php if ($grupoActual !== null): ?></optgroup><?php endif; ?>
+                            <optgroup label="<?= ed_e($s['grupo']) ?>">
+                            <?php $grupoActual = $s['grupo']; ?>
+                        <?php endif; ?>
+
+                        <option value="<?= ed_e($claveSug) ?>"><?= ed_e($s['titulo']) ?></option>
+                    <?php endforeach; ?>
+
+                    <?php if ($grupoActual !== null): ?></optgroup><?php endif; ?>
+                </select>
+
+                <button class="ed-boton-sec" type="submit">Cargar en el editor</button>
+            </form>
+        <?php endif; ?>
+
         <form method="post" action="editor.php">
             <input type="hidden" name="csrf" value="<?= ed_e($_SESSION['csrf']) ?>">
 
+            <div class="ed-envoltura">
             <textarea
+                id="ed-consulta"
+                data-bd="<?= ed_e($bd) ?>"
+                autocomplete="off"
                 class="ed-editor"
                 name="consulta"
                 maxlength="<?= ED_MAX_CARACTERES ?>"
@@ -1159,9 +1450,19 @@ require __DIR__ . '/includes/header.php';
                 aria-label="Consulta SQL"
             ><?= ed_e($sqlTexto) ?></textarea>
 
+            <ul
+                class="ed-lista"
+                id="ed-lista"
+                role="listbox"
+                aria-label="Sugerencias de autocompletado"
+                hidden
+            ></ul>
+            </div>
+
             <label class="ed-modo">
                 <input
                     type="checkbox"
+                    id="ed-modo-prueba"
                     name="modo"
                     value="prueba"
                     <?= $modo === 'prueba' ? 'checked' : '' ?>
@@ -1185,12 +1486,375 @@ require __DIR__ . '/includes/header.php';
                     Plan real (ANALYZE)
                 </button>
 
+                <button class="ed-boton-sec" type="button" id="ed-limpiar" hidden>
+                    Limpiar
+                </button>
+
                 <span class="ed-nota">
                     Una sola sentencia. Cada intento queda en el historial.
+                </span>
+
+                <span class="ed-nota" id="ed-pista" hidden>
+                    Autocompletado: escriba y pulse Tab para aceptar;
+                    Ctrl + Espacio muestra sugerencias. El texto se conserva
+                    al cambiar de módulo.
                 </span>
             </div>
         </form>
     </div>
+
+    <!-- AYUDAS DE ESCRITURA (JavaScript opcional: sin él, el editor funciona igual) -->
+
+    <script type="application/json" id="ed-esquema"><?= json_encode(
+        $esquema,
+        JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE
+    ) ?: '[]' ?></script>
+
+    <script>
+(function () {
+    'use strict';
+
+    var area  = document.getElementById('ed-consulta');
+    var lista = document.getElementById('ed-lista');
+
+    if (!area || !lista) {
+        return;
+    }
+
+    var check      = document.getElementById('ed-modo-prueba');
+    var btnLimpiar = document.getElementById('ed-limpiar');
+    var pista      = document.getElementById('ed-pista');
+    var clave      = 'ed_borrador:' + (area.getAttribute('data-bd') || '');
+
+    /* ---------- Esquema para el autocompletado ---------- */
+
+    var tablas = {};
+
+    try {
+        JSON.parse(document.getElementById('ed-esquema').textContent).forEach(function (x) {
+            tablas[x.t.toLowerCase()] = x;
+        });
+    } catch (e) {
+        tablas = {};
+    }
+
+    var PALABRAS = [
+        'SELECT', 'DISTINCT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'INNER JOIN',
+        'ON', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'AS', 'AND', 'OR', 'NOT',
+        'IN', 'LIKE', 'BETWEEN', 'IS NULL', 'IS NOT NULL', 'ASC', 'DESC', 'UNION',
+        'EXPLAIN', 'ANALYZE', 'DESCRIBE', 'SHOW TABLES', 'SHOW INDEX FROM',
+        'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM'
+    ];
+
+    var FUNCIONES = [
+        'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'ROUND', 'COALESCE', 'CONCAT',
+        'DATE_FORMAT', 'YEAR', 'MONTH', 'NOW', 'CURDATE'
+    ];
+
+    var RESERVADAS = /^(WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|ON|USING|GROUP|ORDER|LIMIT|HAVING|SET|VALUES|UNION|AS|AND|OR|SELECT)$/i;
+
+    /* ---------- Borrador: se conserva al cambiar de módulo ---------- */
+
+    function guardar() {
+        try {
+            if (area.value === '') {
+                sessionStorage.removeItem(clave);
+                return;
+            }
+
+            sessionStorage.setItem(clave, JSON.stringify({
+                sql:  area.value,
+                modo: (check && check.checked) ? 'prueba' : 'lectura'
+            }));
+        } catch (e) {
+            /* sessionStorage no disponible: el editor sigue funcionando */
+        }
+    }
+
+    function restaurar() {
+        try {
+            // Si el servidor ya trajo una consulta (resultado, historial o
+            // sugerencia), manda esa y pasa a ser el borrador vigente.
+            if (area.value.trim() !== '') {
+                guardar();
+                return;
+            }
+
+            var crudo = sessionStorage.getItem(clave);
+
+            if (!crudo) {
+                return;
+            }
+
+            var d = JSON.parse(crudo);
+
+            if (d && typeof d.sql === 'string') {
+                area.value = d.sql;
+
+                if (check) {
+                    check.checked = (d.modo === 'prueba');
+                }
+            }
+        } catch (e) {
+            /* borrador ilegible: se ignora */
+        }
+    }
+
+    /* ---------- Autocompletado ---------- */
+
+    var items = [];
+    var sel   = -1;
+
+    function ident(nombre) {
+        return /^[A-Za-z_][\w$]*$/.test(nombre)
+            ? nombre
+            : '`' + nombre.replace(/`/g, '``') + '`';
+    }
+
+    // Palabra que se está escribiendo justo antes del cursor.
+    function palabraActual(texto) {
+        var m = /(?:([A-Za-z_][\w$]*)\.)?([\w$]*)$/.exec(texto);
+
+        return {
+            calificador: m[1] || null,
+            prefijo:     m[2] || '',
+            inicio:      texto.length - (m[2] || '').length
+        };
+    }
+
+    // Tablas que menciona la consulta y sus alias: alias (o tabla) -> tabla.
+    function alias(texto) {
+        var mapa = {};
+        var re = /\b(?:FROM|JOIN|UPDATE|INTO)\s+`?([A-Za-z_][\w$]*)`?(?:\s+(?:AS\s+)?`?([A-Za-z_][\w$]*)`?)?/gi;
+        var m;
+
+        while ((m = re.exec(texto)) !== null) {
+            var t = m[1].toLowerCase();
+
+            if (!tablas[t]) {
+                continue;
+            }
+
+            mapa[t] = t;
+
+            if (m[2] && !RESERVADAS.test(m[2])) {
+                mapa[m[2].toLowerCase()] = t;
+            }
+        }
+
+        return mapa;
+    }
+
+    function candidatos(forzar) {
+        var antes = area.value.slice(0, area.selectionStart);
+
+        // Dentro de un texto entre comillas no se sugiere nada.
+        if (((antes.match(/'/g) || []).length % 2) === 1 ||
+            ((antes.match(/"/g) || []).length % 2) === 1) {
+            return [];
+        }
+
+        var p = palabraActual(antes);
+
+        if (!forzar && p.prefijo === '' && !p.calificador) {
+            return [];
+        }
+
+        var pre    = p.prefijo.toLowerCase();
+        var salida = [];
+        var vistos = {};
+
+        function agregar(texto, detalle, tipo) {
+            var bajo = texto.toLowerCase();
+            var id   = tipo + ':' + bajo;
+
+            if (vistos[id] || bajo.indexOf(pre) !== 0) {
+                return;
+            }
+
+            if (bajo === pre && !forzar) {
+                return; // ya está escrito completo
+            }
+
+            vistos[id] = true;
+            salida.push({ texto: texto, detalle: detalle, tipo: tipo });
+        }
+
+        var mapa = alias(area.value);
+
+        if (p.calificador) {
+            // "alias." o "tabla." -> columnas de esa tabla
+            var q = p.calificador.toLowerCase();
+            var t = mapa[q] || (tablas[q] ? q : null);
+
+            if (t) {
+                tablas[t].c.forEach(function (c) {
+                    agregar(c[0], c[1], 'columna');
+                });
+            }
+        } else if (/\b(?:FROM|JOIN|UPDATE|INTO|DESCRIBE|DESC)\s+$/i.test(antes.slice(0, p.inicio))) {
+            // Después de FROM, JOIN, etc. -> tablas
+            Object.keys(tablas).forEach(function (k) {
+                agregar(tablas[k].t, 'tabla', 'tabla');
+            });
+        } else {
+            // Columnas de las tablas ya mencionadas, luego tablas, funciones y palabras
+            var usadas = {};
+
+            Object.keys(mapa).forEach(function (k) {
+                usadas[mapa[k]] = true;
+            });
+
+            Object.keys(usadas).forEach(function (k) {
+                tablas[k].c.forEach(function (c) {
+                    agregar(c[0], tablas[k].t, 'columna');
+                });
+            });
+
+            Object.keys(tablas).forEach(function (k) {
+                agregar(tablas[k].t, 'tabla', 'tabla');
+            });
+
+            FUNCIONES.forEach(function (f) {
+                agregar(f, 'función', 'funcion');
+            });
+
+            PALABRAS.forEach(function (w) {
+                agregar(w, 'palabra clave', 'palabra');
+            });
+        }
+
+        return salida.slice(0, 8);
+    }
+
+    function pintar() {
+        lista.textContent = '';
+
+        items.forEach(function (c, i) {
+            var li = document.createElement('li');
+            var a  = document.createElement('strong');
+            var b  = document.createElement('small');
+
+            li.setAttribute('role', 'option');
+            li.className = (i === sel) ? 'ed-sel' : '';
+            a.textContent = c.texto;
+            b.textContent = c.detalle;
+            li.appendChild(a);
+            li.appendChild(b);
+
+            // mousedown (no click) para que el cuadro de texto no pierda el foco
+            li.addEventListener('mousedown', function (ev) {
+                ev.preventDefault();
+                aceptar(c);
+            });
+
+            lista.appendChild(li);
+        });
+
+        lista.hidden = (items.length === 0);
+    }
+
+    function mostrar(forzar) {
+        items = candidatos(forzar);
+        sel = -1;
+        pintar();
+    }
+
+    function cerrar() {
+        items = [];
+        sel = -1;
+        pintar();
+    }
+
+    function aceptar(c) {
+        var pos   = area.selectionStart;
+        var p     = palabraActual(area.value.slice(0, pos));
+        var texto = c.tipo === 'palabra' ? c.texto + ' '
+                  : c.tipo === 'funcion' ? c.texto + '('
+                  : ident(c.texto);
+
+        area.value = area.value.slice(0, p.inicio) + texto + area.value.slice(pos);
+
+        var nueva = p.inicio + texto.length;
+        area.setSelectionRange(nueva, nueva);
+
+        cerrar();
+        guardar();
+        area.focus();
+    }
+
+    area.addEventListener('input', function () {
+        guardar();
+        mostrar(false);
+    });
+
+    area.addEventListener('blur', cerrar);
+    area.addEventListener('click', cerrar);
+
+    area.addEventListener('keydown', function (ev) {
+        if ((ev.ctrlKey || ev.metaKey) && (ev.key === ' ' || ev.code === 'Space')) {
+            ev.preventDefault();
+            mostrar(true);
+            return;
+        }
+
+        if (items.length === 0) {
+            return;
+        }
+
+        if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+            ev.preventDefault();
+
+            if (ev.key === 'ArrowDown') {
+                sel = (sel + 1) % items.length;
+            } else {
+                sel = sel <= 0 ? items.length - 1 : sel - 1;
+            }
+
+            pintar();
+
+            var el = lista.children[sel];
+
+            if (el && el.scrollIntoView) {
+                el.scrollIntoView({ block: 'nearest' });
+            }
+        } else if (ev.key === 'Tab' && !ev.shiftKey) {
+            ev.preventDefault();
+            aceptar(items[sel >= 0 ? sel : 0]);
+        } else if (ev.key === 'Enter' && sel >= 0) {
+            ev.preventDefault();
+            aceptar(items[sel]);
+        } else if (ev.key === 'Escape') {
+            ev.preventDefault();
+            cerrar();
+        } else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight' ||
+                   ev.key === 'Home' || ev.key === 'End') {
+            cerrar();
+        }
+    });
+
+    if (check) {
+        check.addEventListener('change', guardar);
+    }
+
+    if (btnLimpiar) {
+        btnLimpiar.hidden = false;
+
+        btnLimpiar.addEventListener('click', function () {
+            area.value = '';
+            guardar();
+            cerrar();
+            area.focus();
+        });
+    }
+
+    if (pista) {
+        pista.hidden = false;
+    }
+
+    restaurar();
+})();
+    </script>
 
     <!-- ERROR CONTROLADO -->
 
@@ -1502,6 +2166,16 @@ require __DIR__ . '/includes/header.php';
             <strong>Bloqueos:</strong>
             no se admiten INTO OUTFILE, bloqueos de filas, funciones como SLEEP o
             LOAD_FILE, ni los esquemas internos mysql, performance_schema y sys.
+        </li>
+
+        <li>
+            <strong>Ayudas para escribir:</strong>
+            las consultas sugeridas se generan desde el esquema real (tablas,
+            columnas y llaves foráneas) y el navegador solo envía su clave, nunca
+            el SQL. El autocompletado de tablas y columnas y el borrador que se
+            conserva al cambiar de módulo usan un poco de JavaScript; el borrador
+            vive en el navegador (sessionStorage), solo en esa pestaña, y
+            desaparece al cerrarla.
         </li>
 
         <li>
