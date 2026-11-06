@@ -12,9 +12,8 @@
  * - Historial: cada intento queda en una bitácora JSONL privada,
  *            fuera de public_html.
  *
- * - Ayudas para escribir: consultas sugeridas (PHP, generadas desde el esquema
- *            real) y, con JavaScript, autocompletado de tablas y columnas más
- *            un borrador que se conserva al cambiar de módulo (sessionStorage).
+ * - Ayudas para escribir: autocompletado de tablas y columnas con JavaScript
+ *            y un borrador que se conserva al cambiar de módulo (sessionStorage).
  *
  * Configuración reutilizada desde includes/auth.php ($CONFIG).
  * Claves opcionales de $CONFIG:
@@ -628,105 +627,6 @@ function ed_leer_plan(array $f): string
 }
 
 /* =========================================================
-   3b. CONSULTAS SUGERIDAS (generadas desde el esquema real)
-   ========================================================= */
-
-function ed_ident(string $nombre): string
-{
-    return '`' . str_replace('`', '``', $nombre) . '`';
-}
-
-/*
- * Arma el catálogo de consultas sugeridas con las tablas, columnas y llaves
- * foráneas de la base. El navegador solo envía la clave (un hash) de la
- * consulta elegida: el SQL se regenera aquí, nunca se recibe del navegador.
- */
-function ed_sugerencias(array $esquema, array $relaciones): array
-{
-    $lista = [];
-
-    $agregar = function (string $grupo, string $titulo, string $sql) use (&$lista): void {
-        $lista[substr(sha1($sql), 0, 12)] = [
-            'grupo'  => $grupo,
-            'titulo' => $titulo,
-            'sql'    => $sql,
-        ];
-    };
-
-    $agregar('General', 'Ver las tablas', 'SHOW TABLES');
-
-    $agregar(
-        'General',
-        'Tamaño de cada tabla',
-        "SELECT TABLE_NAME, TABLE_ROWS, DATA_LENGTH, INDEX_LENGTH\n"
-        . "FROM information_schema.TABLES\n"
-        . "WHERE TABLE_SCHEMA = DATABASE()\n"
-        . "  AND TABLE_TYPE = 'BASE TABLE'\n"
-        . "ORDER BY DATA_LENGTH + INDEX_LENGTH DESC"
-    );
-
-    // Un JOIN por cada llave foránea.
-    foreach ($relaciones as $r) {
-        $condiciones = [];
-
-        foreach ($r['pares'] as [$colHijo, $colPadre]) {
-            $condiciones[] = 'b.' . ed_ident($colPadre) . ' = a.' . ed_ident($colHijo);
-        }
-
-        $agregar(
-            'Relaciones (JOIN)',
-            $r['hijo'] . ' → ' . $r['padre'],
-            "SELECT a.*, b.*\n"
-            . 'FROM ' . ed_ident($r['hijo']) . " AS a\n"
-            . 'JOIN ' . ed_ident($r['padre']) . " AS b\n"
-            . '  ON ' . implode("\n AND ", $condiciones) . "\n"
-            . 'LIMIT 20'
-        );
-    }
-
-    // Consultas básicas por tabla.
-    foreach (array_slice($esquema, 0, 25) as $t) {
-        $nombre = ed_ident($t['t']);
-        $grupo  = 'Tabla ' . $t['t'];
-        $fecha  = null;
-        $monto  = null;
-
-        foreach ($t['c'] as [$col, $tipo]) {
-            if ($fecha === null && preg_match('/^(date|datetime|timestamp)/i', $tipo)) {
-                $fecha = $col;
-            }
-
-            if ($monto === null && preg_match('/^(decimal|double|float)/i', $tipo)) {
-                $monto = $col;
-            }
-        }
-
-        $agregar($grupo, 'Primeras filas', "SELECT *\nFROM {$nombre}\nLIMIT 20");
-        $agregar($grupo, 'Contar filas', "SELECT COUNT(*) AS filas\nFROM {$nombre}");
-        $agregar($grupo, 'Estructura (DESCRIBE)', "DESCRIBE {$nombre}");
-        $agregar($grupo, 'Índices', "SHOW INDEX FROM {$nombre}");
-
-        if ($fecha !== null) {
-            $agregar(
-                $grupo,
-                'Más recientes por ' . $fecha,
-                "SELECT *\nFROM {$nombre}\nORDER BY " . ed_ident($fecha) . " DESC\nLIMIT 20"
-            );
-        }
-
-        if ($monto !== null) {
-            $agregar(
-                $grupo,
-                'Suma de ' . $monto,
-                "SELECT COUNT(*) AS filas, SUM(" . ed_ident($monto) . ") AS total\nFROM {$nombre}"
-            );
-        }
-    }
-
-    return $lista;
-}
-
-/* =========================================================
    4. CONEXIÓN
    ========================================================= */
 
@@ -768,12 +668,10 @@ try {
 }
 
 /* =========================================================
-   4b. ESQUEMA (autocompletado y consultas sugeridas)
+   4b. ESQUEMA (autocompletado)
    ========================================================= */
 
 $esquema = [];
-$relaciones = [];
-$sugerencias = [];
 
 if ($pdo) {
     try {
@@ -799,38 +697,7 @@ if ($pdo) {
         error_log('editor.php (esquema): ' . $ex->getMessage());
     }
 
-    try {
-        $porLlave = [];
 
-        $fks = $pdo->query(
-            "SELECT CONSTRAINT_NAME AS nombre,
-                    TABLE_NAME AS hijo,
-                    COLUMN_NAME AS col_hijo,
-                    REFERENCED_TABLE_NAME AS padre,
-                    REFERENCED_COLUMN_NAME AS col_padre
-             FROM information_schema.KEY_COLUMN_USAGE
-             WHERE TABLE_SCHEMA = DATABASE()
-               AND REFERENCED_TABLE_SCHEMA = DATABASE()
-               AND REFERENCED_TABLE_NAME IS NOT NULL
-             ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION"
-        )->fetchAll();
-
-        foreach ($fks as $f) {
-            $k = $f['hijo'] . "\0" . $f['nombre'];
-
-            if (!isset($porLlave[$k])) {
-                $porLlave[$k] = ['hijo' => $f['hijo'], 'padre' => $f['padre'], 'pares' => []];
-            }
-
-            $porLlave[$k]['pares'][] = [$f['col_hijo'], $f['col_padre']];
-        }
-
-        $relaciones = array_values($porLlave);
-    } catch (Throwable $ex) {
-        error_log('editor.php (llaves foráneas): ' . $ex->getMessage());
-    }
-
-    $sugerencias = ed_sugerencias($esquema, $relaciones);
 }
 
 /* =========================================================
@@ -895,19 +762,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($encontrado && is_string($encontrado[0]['consulta'] ?? null)) {
                 $_SESSION['ed_sql']  = $encontrado[0]['consulta'];
                 $_SESSION['ed_modo'] = ($encontrado[0]['modo'] ?? '') === 'prueba' ? 'prueba' : 'lectura';
-            }
-
-            header('Location: editor.php');
-            exit;
-        }
-
-        // 2b. Cargar una consulta sugerida (el navegador solo envía su clave).
-        if ($accion === 'sugerir') {
-            $claveSug = $_POST['sugerencia'] ?? '';
-
-            if (is_string($claveSug) && isset($sugerencias[$claveSug])) {
-                $_SESSION['ed_sql']  = $sugerencias[$claveSug]['sql'];
-                $_SESSION['ed_modo'] = 'lectura';
             }
 
             header('Location: editor.php');
@@ -1276,31 +1130,6 @@ require __DIR__ . '/includes/header.php';
         display: none !important;
     }
 
-    .ed-sugerir {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 10px;
-        margin: 0 0 14px;
-    }
-
-    .ed-sugerir label {
-        font-size: 13px;
-        color: #5b6475;
-    }
-
-    .ed-sugerir select {
-        flex: 1;
-        min-width: 220px;
-        max-width: 100%;
-        padding: 8px 10px;
-        border: 1px solid #b6c2de;
-        border-radius: 6px;
-        background: #fff;
-        color: #0e235a;
-        font-size: 14px;
-    }
-
     .ed-envoltura {
         position: relative;
     }
@@ -1405,34 +1234,6 @@ require __DIR__ . '/includes/header.php';
 
     <div class="ed-caja">
         <h2>Consulta</h2>
-
-        <?php if ($sugerencias): ?>
-            <form method="post" action="editor.php" class="ed-sugerir">
-                <input type="hidden" name="csrf" value="<?= ed_e($_SESSION['csrf']) ?>">
-                <input type="hidden" name="accion" value="sugerir">
-
-                <label for="ed-sugerencia">Consultas sugeridas</label>
-
-                <select id="ed-sugerencia" name="sugerencia" required>
-                    <option value="">Elija una consulta de ejemplo…</option>
-
-                    <?php $grupoActual = null; ?>
-                    <?php foreach ($sugerencias as $claveSug => $s): ?>
-                        <?php if ($s['grupo'] !== $grupoActual): ?>
-                            <?php if ($grupoActual !== null): ?></optgroup><?php endif; ?>
-                            <optgroup label="<?= ed_e($s['grupo']) ?>">
-                            <?php $grupoActual = $s['grupo']; ?>
-                        <?php endif; ?>
-
-                        <option value="<?= ed_e($claveSug) ?>"><?= ed_e($s['titulo']) ?></option>
-                    <?php endforeach; ?>
-
-                    <?php if ($grupoActual !== null): ?></optgroup><?php endif; ?>
-                </select>
-
-                <button class="ed-boton-sec" type="submit">Cargar en el editor</button>
-            </form>
-        <?php endif; ?>
 
         <form method="post" action="editor.php">
             <input type="hidden" name="csrf" value="<?= ed_e($_SESSION['csrf']) ?>">
@@ -1573,8 +1374,8 @@ require __DIR__ . '/includes/header.php';
 
     function restaurar() {
         try {
-            // Si el servidor ya trajo una consulta (resultado, historial o
-            // sugerencia), manda esa y pasa a ser el borrador vigente.
+            // Si el servidor ya trajo una consulta (resultado o historial),
+            // manda esa y pasa a ser el borrador vigente.
             if (area.value.trim() !== '') {
                 guardar();
                 return;
@@ -2170,10 +1971,8 @@ require __DIR__ . '/includes/header.php';
 
         <li>
             <strong>Ayudas para escribir:</strong>
-            las consultas sugeridas se generan desde el esquema real (tablas,
-            columnas y llaves foráneas) y el navegador solo envía su clave, nunca
-            el SQL. El autocompletado de tablas y columnas y el borrador que se
-            conserva al cambiar de módulo usan un poco de JavaScript; el borrador
+            el autocompletado de tablas y columnas y el borrador que se
+            conserva al cambiar de módulo usan JavaScript; el borrador
             vive en el navegador (sessionStorage), solo en esa pestaña, y
             desaparece al cerrarla.
         </li>
